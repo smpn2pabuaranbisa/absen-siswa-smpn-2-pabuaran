@@ -47,6 +47,7 @@ export default function App() {
   // Time clock & sync state
   const [currentTime, setCurrentTime] = useState(new Date());
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [isLoadingConfig, setIsLoadingConfig] = useState(true);
 
   // Dynamic network state listener
   useEffect(() => {
@@ -172,7 +173,11 @@ export default function App() {
         setConfig(cfg);
         localStorage.setItem('absensi_qr_config', JSON.stringify(cfg));
       }
-    }, (err) => console.error('Error listening to config:', err));
+      setIsLoadingConfig(false);
+    }, (err) => {
+      console.error('Error listening to config:', err);
+      setIsLoadingConfig(false);
+    });
 
     return () => {
       unsubStudents();
@@ -573,6 +578,22 @@ export default function App() {
       console.error('Failed to restore cloud database:', err);
     }
   };
+
+  if (isLoadingConfig) {
+    return (
+      <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center p-6">
+        <div className="flex flex-col items-center max-w-sm text-center">
+          <div className="relative flex items-center justify-center mb-6">
+            <div className="w-16 h-16 border-4 border-slate-200 border-t-indigo-600 rounded-full animate-spin"></div>
+            <QrCode className="h-6 w-6 text-indigo-600 absolute animate-pulse" />
+          </div>
+          <h2 className="text-xl font-black text-gray-900 tracking-tight mb-2">SMPN 2 PABUARAN</h2>
+          <p className="text-sm text-slate-500 font-bold mb-1">Menghubungkan ke Database Cloud...</p>
+          <p className="text-[11px] text-slate-400 font-medium">Sistem sedang sinkronisasi data online-first</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!config.isConfigured) {
     return <Onboarding onComplete={handleOnboardingComplete} />;
