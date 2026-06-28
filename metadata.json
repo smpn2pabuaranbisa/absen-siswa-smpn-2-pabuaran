@@ -1,0 +1,10 @@
+{
+  "name": "Remix: Absensi Siswa QR SMPN 2 PABUARAN",
+  "description": "Aplikasi absensi siswa dengan sistem pemindaian QR code untuk verifikasi kehadiran cepat dan aman.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
