@@ -35,6 +35,17 @@ export default function ClassConfig({
   const [waApiPayload, setWaApiPayload] = useState(config.waApiPayload || '{"target": "{{phone}}", "message": "{{message}}"}');
   const [logoUrl, setLogoUrl] = useState(config.logoUrl || '');
   
+  // Headmaster states
+  const [headmasterName, setHeadmasterName] = useState(() => {
+    return localStorage.getItem('absensi_qr_headmaster_name') || 'Drs. H. Suherman, M.Pd';
+  });
+  const [headmasterNip, setHeadmasterNip] = useState(() => {
+    return localStorage.getItem('absensi_qr_headmaster_nip') || '197403122005011002';
+  });
+  const [academicYear, setAcademicYear] = useState(() => {
+    return localStorage.getItem('absensi_qr_academic_year') || 'TA. 2026/2027';
+  });
+  
   // Custom class list state
   const [newClassName, setNewClassName] = useState('');
   const [isSavedAlert, setIsSavedAlert] = useState(false);
@@ -42,6 +53,11 @@ export default function ClassConfig({
   const [confirmResetData, setConfirmResetData] = useState<boolean>(false);
   const [classToDelete, setClassToDelete] = useState<string | null>(null);
   const [alertMessage, setAlertMessage] = useState<string | null>(null);
+
+  // Editing class teacher details states
+  const [editingClassTeacher, setEditingClassTeacher] = useState<string | null>(null);
+  const [editingTeacherName, setEditingTeacherName] = useState('');
+  const [editingTeacherNip, setEditingTeacherNip] = useState('');
 
   // Extract list of current unique classes
   const uniqueClasses = useMemo(() => {
@@ -67,6 +83,10 @@ export default function ClassConfig({
       waApiPayload: waApiPayload.trim(),
       logoUrl,
     });
+    
+    localStorage.setItem('absensi_qr_headmaster_name', headmasterName.trim());
+    localStorage.setItem('absensi_qr_headmaster_nip', headmasterNip.trim());
+    localStorage.setItem('absensi_qr_academic_year', academicYear.trim());
     
     setIsSavedAlert(true);
     setTimeout(() => setIsSavedAlert(false), 3000);
@@ -127,6 +147,15 @@ export default function ClassConfig({
 
   // Export full app DB backup to JSON file
   const handleExportBackup = () => {
+    const teachers: Record<string, { name: string; nip: string }> = {};
+    uniqueClasses.forEach(className => {
+      const name = localStorage.getItem(`absensi_qr_teacher_name_${className}`);
+      const nip = localStorage.getItem(`absensi_qr_teacher_nip_${className}`);
+      if (name || nip) {
+        teachers[className] = { name: name || '', nip: nip || '' };
+      }
+    });
+
     const backupData = {
       students,
       records,
@@ -134,6 +163,10 @@ export default function ClassConfig({
       signatureImage: localStorage.getItem('absensi_qr_signature_image'),
       stampImage: localStorage.getItem('absensi_qr_stamp_image'),
       idCardConfig: localStorage.getItem('absensi_qr_idcard_config'),
+      headmasterName: localStorage.getItem('absensi_qr_headmaster_name'),
+      headmasterNip: localStorage.getItem('absensi_qr_headmaster_nip'),
+      academicYear: localStorage.getItem('absensi_qr_academic_year'),
+      teachers,
       exportedAt: new Date().toISOString()
     };
 
@@ -185,6 +218,29 @@ export default function ClassConfig({
     if (data.idCardConfig) localStorage.setItem('absensi_qr_idcard_config', data.idCardConfig);
     else localStorage.removeItem('absensi_qr_idcard_config');
 
+    if (data.headmasterName) {
+      localStorage.setItem('absensi_qr_headmaster_name', data.headmasterName);
+      setHeadmasterName(data.headmasterName);
+    }
+    if (data.headmasterNip) {
+      localStorage.setItem('absensi_qr_headmaster_nip', data.headmasterNip);
+      setHeadmasterNip(data.headmasterNip);
+    }
+    if (data.academicYear) {
+      localStorage.setItem('absensi_qr_academic_year', data.academicYear);
+      setAcademicYear(data.academicYear);
+    }
+
+    if (data.teachers) {
+      Object.entries(data.teachers).forEach(([className, val]: [string, any]) => {
+        if (val.name) localStorage.setItem(`absensi_qr_teacher_name_${className}`, val.name);
+        else localStorage.removeItem(`absensi_qr_teacher_name_${className}`);
+        
+        if (val.nip) localStorage.setItem(`absensi_qr_teacher_nip_${className}`, val.nip);
+        else localStorage.removeItem(`absensi_qr_teacher_nip_${className}`);
+      });
+    }
+
     setConfirmRestoreData(null);
     setAlertMessage('Database dan semua pengaturan berhasil dipulihkan dari berkas cadangan!');
   };
@@ -213,6 +269,52 @@ export default function ClassConfig({
               required
               value={schoolName}
               onChange={(e) => setSchoolName(e.target.value)}
+              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-semibold text-gray-800 outline-none focus:bg-white focus:border-purple-500 transition-all"
+            />
+          </div>
+
+          {/* Kepala Sekolah & NIP */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                <span className="text-gray-400 font-bold">👤</span> Nama Kepala Sekolah
+              </label>
+              <input
+                type="text"
+                required
+                value={headmasterName}
+                onChange={(e) => setHeadmasterName(e.target.value)}
+                placeholder="Drs. H. Suherman, M.Pd"
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-semibold text-gray-800 outline-none focus:bg-white focus:border-purple-500 transition-all"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                <span className="text-gray-400 font-bold">🆔</span> NIP Kepala Sekolah
+              </label>
+              <input
+                type="text"
+                required
+                value={headmasterNip}
+                onChange={(e) => setHeadmasterNip(e.target.value)}
+                placeholder="197403122005011002"
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-semibold text-gray-800 outline-none focus:bg-white focus:border-purple-500 transition-all"
+              />
+            </div>
+          </div>
+
+          {/* Tahun Ajaran */}
+          <div>
+            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5 flex items-center gap-1">
+              <BookOpen className="h-3.5 w-3.5 text-gray-400" /> Tahun Ajaran
+            </label>
+            <input
+              type="text"
+              required
+              value={academicYear}
+              onChange={(e) => setAcademicYear(e.target.value)}
+              placeholder="TA. 2026/2027"
               className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-semibold text-gray-800 outline-none focus:bg-white focus:border-purple-500 transition-all"
             />
           </div>
@@ -441,33 +543,61 @@ export default function ClassConfig({
           </form>
 
           {/* List of active classes */}
-          <div className="space-y-1.5 max-h-[140px] overflow-y-auto pr-1">
+          <div className="space-y-2 max-h-[320px] overflow-y-auto pr-1">
             {uniqueClasses.map((className) => {
               const studentCount = students.filter(s => s.className === className).length;
               const isCustom = config.customClasses?.includes(className);
+              const teacherName = localStorage.getItem(`absensi_qr_teacher_name_${className}`) || '';
+              const teacherNip = localStorage.getItem(`absensi_qr_teacher_nip_${className}`) || '';
+
               return (
-                <div key={className} className="px-3 py-2 bg-gray-50 border border-gray-100 rounded-xl flex items-center justify-between text-xs">
-                  <div className="font-bold text-gray-700">{className}</div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full uppercase">
-                      {studentCount} Siswa
-                    </span>
-                    {isCustom && (
-                      <button
-                        onClick={() => {
-                          const studentCount = students.filter(s => s.className === className).length;
-                          if (studentCount > 0) {
-                            setAlertMessage(`Tidak dapat menghapus Rombel "${className}" karena masih memiliki ${studentCount} siswa terdaftar. Hapus atau pindahkan siswa terlebih dahulu.`);
-                            return;
-                          }
-                          setClassToDelete(className);
-                        }}
-                        className="p-1 text-red-500 hover:bg-red-50 hover:text-red-600 rounded transition-colors cursor-pointer"
-                        title="Hapus Rombel"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    )}
+                <div key={className} className="p-3 bg-gray-50 border border-gray-100 rounded-xl flex flex-col gap-2 text-xs">
+                  <div className="flex items-center justify-between">
+                    <div className="font-bold text-gray-800 text-sm">{className}</div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full uppercase">
+                        {studentCount} Siswa
+                      </span>
+                      {isCustom && (
+                        <button
+                          onClick={() => {
+                            const studentCount = students.filter(s => s.className === className).length;
+                            if (studentCount > 0) {
+                              setAlertMessage(`Tidak dapat menghapus Rombel "${className}" karena masih memiliki ${studentCount} siswa terdaftar. Hapus atau pindahkan siswa terlebih dahulu.`);
+                              return;
+                            }
+                            setClassToDelete(className);
+                          }}
+                          className="p-1 text-red-500 hover:bg-red-50 hover:text-red-600 rounded transition-colors cursor-pointer"
+                          title="Hapus Rombel"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between border-t border-gray-150/50 pt-2 text-gray-500">
+                    <div>
+                      {teacherName ? (
+                        <div>
+                          <div className="font-semibold text-gray-700">Wali: {teacherName}</div>
+                          {teacherNip && <div className="text-[10px] text-gray-400">NIP. {teacherNip}</div>}
+                        </div>
+                      ) : (
+                        <span className="text-gray-400 italic">Belum ada Wali Kelas</span>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => {
+                        setEditingClassTeacher(className);
+                        setEditingTeacherName(teacherName);
+                        setEditingTeacherNip(teacherNip);
+                      }}
+                      className="px-2 py-1 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-lg font-bold text-[10px] transition-colors cursor-pointer"
+                    >
+                      Atur Wali
+                    </button>
                   </div>
                 </div>
               );
@@ -635,6 +765,77 @@ export default function ClassConfig({
                 className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer shadow-sm shadow-red-200"
               >
                 Ya, Hapus
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT WALI KELAS MODAL */}
+      {editingClassTeacher && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-sm w-full shadow-2xl overflow-hidden border border-gray-100 flex flex-col">
+            <div className="p-6 space-y-4">
+              <div className="text-center">
+                <div className="w-12 h-12 bg-purple-50 text-purple-600 rounded-full flex items-center justify-center mx-auto mb-2">
+                  <span className="text-xl">👨‍🏫</span>
+                </div>
+                <h3 className="text-lg font-bold text-gray-900">Atur Wali Kelas - {editingClassTeacher}</h3>
+                <p className="text-xs text-gray-500">Tentukan nama dan NIP Wali Kelas untuk dicantumkan pada laporan.</p>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Nama Lengkap & Gelar</label>
+                  <input
+                    type="text"
+                    value={editingTeacherName}
+                    onChange={(e) => setEditingTeacherName(e.target.value)}
+                    placeholder="Contoh: Budi Santoso, S.Pd"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs font-semibold focus:outline-hidden focus:ring-1 focus:ring-purple-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">NIP Wali Kelas</label>
+                  <input
+                    type="text"
+                    value={editingTeacherNip}
+                    onChange={(e) => setEditingTeacherNip(e.target.value)}
+                    placeholder="Contoh: 198205122008011003"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs font-semibold focus:outline-hidden focus:ring-1 focus:ring-purple-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-between gap-3">
+              <button
+                onClick={() => setEditingClassTeacher(null)}
+                className="flex-1 px-4 py-2 hover:bg-gray-200 text-gray-600 font-bold rounded-xl text-xs transition-colors cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                onClick={() => {
+                  if (editingTeacherName.trim()) {
+                    localStorage.setItem(`absensi_qr_teacher_name_${editingClassTeacher}`, editingTeacherName.trim());
+                  } else {
+                    localStorage.removeItem(`absensi_qr_teacher_name_${editingClassTeacher}`);
+                  }
+
+                  if (editingTeacherNip.trim()) {
+                    localStorage.setItem(`absensi_qr_teacher_nip_${editingClassTeacher}`, editingTeacherNip.trim());
+                  } else {
+                    localStorage.removeItem(`absensi_qr_teacher_nip_${editingClassTeacher}`);
+                  }
+
+                  setEditingClassTeacher(null);
+                  setAlertMessage(`Wali Kelas untuk kelas ${editingClassTeacher} berhasil diperbarui!`);
+                }}
+                className="flex-1 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer shadow-sm shadow-purple-200"
+              >
+                Simpan
               </button>
             </div>
           </div>

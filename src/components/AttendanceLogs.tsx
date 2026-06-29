@@ -169,6 +169,18 @@ export default function AttendanceLogs({
       return;
     }
 
+    const hName = localStorage.getItem('absensi_qr_headmaster_name') || 'Drs. H. Suherman, M.Pd';
+    const hNip = localStorage.getItem('absensi_qr_headmaster_nip') || '197403122005011002';
+    const sigImg = localStorage.getItem('absensi_qr_signature_image') || '';
+    const stampImg = localStorage.getItem('absensi_qr_stamp_image') || '';
+
+    const teacherName = activeClass !== 'Semua Kelas'
+      ? (localStorage.getItem(`absensi_qr_teacher_name_${activeClass}`) || '')
+      : '';
+    const teacherNip = activeClass !== 'Semua Kelas'
+      ? (localStorage.getItem(`absensi_qr_teacher_nip_${activeClass}`) || '')
+      : '';
+
     const dayCols = Array.from({ length: daysInMonth }, (_, i) => i + 1);
 
     const rowsHtml = activeStudents.map((student, index) => {
@@ -283,17 +295,47 @@ export default function AttendanceLogs({
               gap: 5px;
             }
             .signature-section {
-              margin-top: 40px;
+              margin-top: 50px;
               display: flex;
-              justify-content: flex-end;
+              justify-content: space-between;
+              padding: 0 40px;
               text-align: center;
+              page-break-inside: avoid;
             }
             .signature-box {
-              width: 200px;
+              width: 240px;
+              position: relative;
+            }
+            .signature-space {
+              height: 70px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              position: relative;
+              margin: 5px 0;
+            }
+            .signature-img {
+              max-height: 70px;
+              max-width: 140px;
+              object-fit: contain;
+              position: absolute;
+              z-index: 2;
+            }
+            .stamp-img {
+              max-height: 80px;
+              max-width: 140px;
+              object-fit: contain;
+              position: absolute;
+              opacity: 0.85;
+              z-index: 1;
+              left: 15px;
+              top: -5px;
             }
             .signature-line {
-              margin-top: 60px;
               border-bottom: 1px solid #333;
+              font-weight: bold;
+              padding-bottom: 2px;
+              margin-bottom: 3px;
             }
             
             @media print {
@@ -376,9 +418,21 @@ export default function AttendanceLogs({
           <div class="signature-section">
             <div class="signature-box">
               <div>Mengetahui,</div>
+              <div>Kepala Sekolah</div>
+              <div class="signature-space">
+                ${stampImg ? `<img src="${stampImg}" class="stamp-img" />` : ''}
+                ${sigImg ? `<img src="${sigImg}" class="signature-img" />` : ''}
+              </div>
+              <div class="signature-line">${hName}</div>
+              <div>NIP. ${hNip}</div>
+            </div>
+
+            <div class="signature-box">
+              <div>&nbsp;</div>
               <div>Wali Kelas ${activeClass !== 'Semua Kelas' ? activeClass : '...........'}</div>
-              <div class="signature-line"></div>
-              <div>NIP. ................................</div>
+              <div class="signature-space"></div>
+              <div class="signature-line">${teacherName || '&nbsp;'}</div>
+              <div>${teacherNip ? `NIP. ${teacherNip}` : 'NIP. ..........................................'}</div>
             </div>
           </div>
         </body>

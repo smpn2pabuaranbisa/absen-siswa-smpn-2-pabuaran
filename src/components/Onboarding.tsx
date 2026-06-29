@@ -1,4 +1,4 @@
-import { useState, FormEvent } from 'react';
+import React, { useState, FormEvent } from 'react';
 import { School, ChevronRight, Settings } from 'lucide-react';
 import { AttendanceConfig } from '../types';
 

@@ -142,6 +142,9 @@ export default function StudentList({
   const [headmasterName, setHeadmasterName] = useState(() => {
     return localStorage.getItem('absensi_qr_headmaster_name') || 'Drs. H. Suherman, M.Pd';
   });
+  const [headmasterNip, setHeadmasterNip] = useState(() => {
+    return localStorage.getItem('absensi_qr_headmaster_nip') || '197403122005011002';
+  });
   const [academicYear, setAcademicYear] = useState(() => {
     return localStorage.getItem('absensi_qr_academic_year') || 'TA. 2026/2027';
   });
@@ -182,6 +185,10 @@ export default function StudentList({
   useEffect(() => {
     localStorage.setItem('absensi_qr_headmaster_name', headmasterName);
   }, [headmasterName]);
+
+  useEffect(() => {
+    localStorage.setItem('absensi_qr_headmaster_nip', headmasterNip);
+  }, [headmasterNip]);
 
   useEffect(() => {
     localStorage.setItem('absensi_qr_academic_year', academicYear);
@@ -2557,15 +2564,26 @@ export default function StudentList({
                         />
                       </div>
                       <div>
-                        <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Tahun Ajaran</label>
+                        <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">NIP Kepala Sekolah</label>
                         <input
                           type="text"
-                          value={academicYear}
-                          onChange={(e) => setAcademicYear(e.target.value)}
-                          placeholder="TA. 2026/2027"
+                          value={headmasterNip}
+                          onChange={(e) => setHeadmasterNip(e.target.value)}
+                          placeholder="NIP Kepala Sekolah"
                           className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs font-semibold focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
                         />
                       </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Tahun Ajaran</label>
+                      <input
+                        type="text"
+                        value={academicYear}
+                        onChange={(e) => setAcademicYear(e.target.value)}
+                        placeholder="TA. 2026/2027"
+                        className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs font-semibold focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
+                      />
                     </div>
 
                     <div className="space-y-2.5">
@@ -3106,15 +3124,26 @@ export default function StudentList({
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Tahun Ajaran</label>
+                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">NIP Kepala Sekolah</label>
                     <input
                       type="text"
-                      value={academicYear}
-                      onChange={(e) => setAcademicYear(e.target.value)}
-                      placeholder="TA. 2026/2027"
+                      value={headmasterNip}
+                      onChange={(e) => setHeadmasterNip(e.target.value)}
+                      placeholder="NIP Kepala Sekolah"
                       className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs font-semibold focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
                     />
                   </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Tahun Ajaran</label>
+                  <input
+                    type="text"
+                    value={academicYear}
+                    onChange={(e) => setAcademicYear(e.target.value)}
+                    placeholder="TA. 2026/2027"
+                    className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs font-semibold focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
+                  />
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
