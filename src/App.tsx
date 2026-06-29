@@ -131,57 +131,20 @@ export default function App() {
       localStorage.setItem("absensi_qr_events", JSON.stringify([]));
     }
 
-    // B. Automatically seed Cloud Firestore with local database state if it is completely empty
+    // B. Ensure config exists in cloud
     const checkAndSeedCloudDatabase = async () => {
       try {
-        const studentSnap = await getDocs(collection(db, "students"));
-        if (studentSnap.empty) {
-          console.log(
-            "Firebase Firestore is empty. Initializing cloud backup from local state...",
-          );
-          const batch = writeBatch(db);
-
-          const curStudents = localStorage.getItem("absensi_qr_students")
-            ? JSON.parse(localStorage.getItem("absensi_qr_students")!)
-            : INITIAL_STUDENTS;
-          curStudents.forEach((st: Student) => {
-            batch.set(doc(db, "students", st.id), st);
-          });
-
-          const curRecords = localStorage.getItem("absensi_qr_records")
-            ? JSON.parse(localStorage.getItem("absensi_qr_records")!)
-            : generateMockAttendance();
-          curRecords.forEach((rec: AttendanceRecord) => {
-            batch.set(doc(db, "attendance_records", rec.id), rec);
-          });
-
-          const curEvents = localStorage.getItem("absensi_qr_events")
-            ? JSON.parse(localStorage.getItem("absensi_qr_events")!)
-            : [];
-          curEvents.forEach((ev: CalendarEvent) => {
-            batch.set(doc(db, "calendar_events", ev.id), ev);
-          });
-
+        const cfgSnap = await getDoc(doc(db, "config", "global_config"));
+        if (!cfgSnap.exists()) {
           const curConfig = localStorage.getItem("absensi_qr_config")
             ? JSON.parse(localStorage.getItem("absensi_qr_config")!)
             : INITIAL_CONFIG;
-          batch.set(doc(db, "config", "global_config"), curConfig);
-
-          await batch.commit();
-          console.log("Cloud seeding completed successfully.");
-        } else {
-          // Verify config exists, as sometimes only students were seeded
-          const cfgSnap = await getDoc(doc(db, "config", "global_config"));
-          if (!cfgSnap.exists()) {
-            const curConfig = localStorage.getItem("absensi_qr_config")
-              ? JSON.parse(localStorage.getItem("absensi_qr_config")!)
-              : INITIAL_CONFIG;
-            await setDoc(doc(db, "config", "global_config"), curConfig);
-          }
+          await setDoc(doc(db, "config", "global_config"), curConfig);
+          console.log("Cloud config initialized.");
         }
       } catch (err) {
         console.warn(
-          "Unable to auto-seed cloud database (currently offline or starting):",
+          "Unable to auto-seed cloud config:",
           err,
         );
       }
@@ -197,10 +160,8 @@ export default function App() {
         snap.forEach((d) => {
           list.push(d.data() as Student);
         });
-        if (list.length > 0) {
-          setStudents(list);
-          localStorage.setItem("absensi_qr_students", JSON.stringify(list));
-        }
+        setStudents(list);
+        localStorage.setItem("absensi_qr_students", JSON.stringify(list));
       },
       (err) => console.error("Error listening to students:", err),
     );
