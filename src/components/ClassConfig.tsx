@@ -33,6 +33,7 @@ export default function ClassConfig({
   const [waApiUrl, setWaApiUrl] = useState(config.waApiUrl || '');
   const [waApiHeaders, setWaApiHeaders] = useState(config.waApiHeaders || '{"Content-Type": "application/json"}');
   const [waApiPayload, setWaApiPayload] = useState(config.waApiPayload || '{"target": "{{phone}}", "message": "{{message}}"}');
+  const [logoUrl, setLogoUrl] = useState(config.logoUrl || '');
   
   // Custom class list state
   const [newClassName, setNewClassName] = useState('');
@@ -64,6 +65,7 @@ export default function ClassConfig({
       waApiUrl: waApiUrl.trim(),
       waApiHeaders: waApiHeaders.trim(),
       waApiPayload: waApiPayload.trim(),
+      logoUrl,
     });
     
     setIsSavedAlert(true);
@@ -88,6 +90,23 @@ export default function ClassConfig({
 
     setAlertMessage(`Rombel Kelas "${classCapitalized}" berhasil dibuat! Anda sekarang dapat memilih kelas ini saat mendaftarkan siswa baru.`);
     setNewClassName('');
+  };
+
+  const handleLogoUpload = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Check size limit (e.g., max 500KB to prevent Firestore/LocalStorage bloating)
+    if (file.size > 500 * 1024) {
+      setAlertMessage('Ukuran logo terlalu besar. Maksimal 500KB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setLogoUrl(event.target?.result as string);
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleDeleteClass = (classNameToDelete: string) => {
@@ -196,6 +215,40 @@ export default function ClassConfig({
               onChange={(e) => setSchoolName(e.target.value)}
               className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-semibold text-gray-800 outline-none focus:bg-white focus:border-purple-500 transition-all"
             />
+          </div>
+
+          {/* School Logo */}
+          <div>
+            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5 flex items-center gap-1">
+              <Upload className="h-3.5 w-3.5 text-gray-400" /> Logo Instansi / Sekolah (Opsional)
+            </label>
+            <div className="flex items-center gap-4">
+              {logoUrl ? (
+                <div className="relative h-16 w-16 rounded-xl border border-gray-200 overflow-hidden bg-gray-50 flex-shrink-0">
+                  <img src={logoUrl} alt="Logo" className="w-full h-full object-contain p-1" />
+                  <button 
+                    type="button" 
+                    onClick={() => setLogoUrl('')}
+                    className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity"
+                  >
+                    <Trash2 className="h-5 w-5 text-white" />
+                  </button>
+                </div>
+              ) : (
+                <div className="h-16 w-16 rounded-xl border-2 border-dashed border-gray-200 bg-gray-50 flex items-center justify-center text-gray-400 flex-shrink-0">
+                  <School className="h-6 w-6 opacity-30" />
+                </div>
+              )}
+              <div className="flex-1">
+                <input
+                  type="file"
+                  accept="image/png, image/jpeg, image/webp"
+                  onChange={handleLogoUpload}
+                  className="block w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-purple-50 file:text-purple-700 hover:file:bg-purple-100 transition-all cursor-pointer"
+                />
+                <p className="text-[10px] text-gray-400 mt-1">Format: JPG, PNG, WEBP. Maks 500KB.</p>
+              </div>
+            </div>
           </div>
 
           {/* Check in limits */}

@@ -100,6 +100,7 @@ interface StudentListProps {
   onBulkImport: (imported: Omit<Student, 'id'>[]) => void;
   activeClass: string;
   schoolName?: string;
+  logoUrl?: string;
   customClasses?: string[];
 }
 
@@ -111,6 +112,7 @@ export default function StudentList({
   onBulkImport,
   activeClass,
   schoolName = 'SMA NEGERI 1 ABSENSI',
+  logoUrl,
   customClasses = []
 }: StudentListProps) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -633,7 +635,7 @@ export default function StudentList({
               ${bgFrontHtml}
               <div class="card-header-band" style="z-index: 10;">
                 <div class="crest-container">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="crest-icon"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                  ${logoUrl ? `<img src="${logoUrl}" style="width:100%;height:100%;object-fit:contain;"/>` : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="crest-icon"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`}
                 </div>
                 <div class="header-text-container">
                   <div class="school-name-text">${schoolName}</div>
@@ -739,7 +741,7 @@ export default function StudentList({
               ${bgFrontHtml}
               <div class="landscape-header-band" style="z-index: 10;">
                 <div class="landscape-crest">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="crest-icon"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                  ${logoUrl ? `<img src="${logoUrl}" style="width:100%;height:100%;object-fit:contain;"/>` : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="crest-icon"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`}
                 </div>
                 <div class="landscape-header-text">
                   <div class="school-name-text">${schoolName}</div>

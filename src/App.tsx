@@ -715,9 +715,13 @@ export default function App() {
         <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-10 h-16 flex items-center justify-between">
           {/* Logo & Brand */}
           <div className="flex items-center space-x-3">
-            <div className="h-10 w-10 bg-gradient-to-tr from-purple-700 to-indigo-800 text-white rounded-xl flex items-center justify-center font-bold text-lg shadow-sm">
-              <QrCode className="h-5 w-5" />
-            </div>
+            {config.logoUrl ? (
+              <img src={config.logoUrl} alt="Logo" className="h-10 w-10 object-contain rounded-xl" />
+            ) : (
+              <div className="h-10 w-10 bg-gradient-to-tr from-purple-700 to-indigo-800 text-white rounded-xl flex items-center justify-center font-bold text-lg shadow-sm">
+                <QrCode className="h-5 w-5" />
+              </div>
+            )}
             <div>
               <h1 className="text-base font-black text-gray-900 tracking-tight">
                 {config.schoolName}
@@ -924,6 +928,7 @@ export default function App() {
               onBulkImport={handleBulkImport}
               activeClass={config.selectedClassFilter}
               schoolName={config.schoolName}
+              logoUrl={config.logoUrl}
               customClasses={config.customClasses}
             />
           )}

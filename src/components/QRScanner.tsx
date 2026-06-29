@@ -1,26 +1,40 @@
-import { useEffect, useRef, useState, useMemo, ChangeEvent, FormEvent } from 'react';
-import { Html5Qrcode } from 'html5-qrcode';
-import { Student, AttendanceRecord } from '../types';
-import { 
-  Camera, Upload, AlertCircle, CheckCircle, 
-  RefreshCw, Play, Square, Keyboard, Sparkles, Volume2, ScanLine 
-} from 'lucide-react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  useMemo,
+  ChangeEvent,
+  FormEvent,
+} from "react";
+import { Student, AttendanceRecord } from "../types";
+import {
+  AlertCircle,
+  CheckCircle,
+  RefreshCw,
+  Play,
+  Square,
+  Keyboard,
+  Sparkles,
+  Volume2,
+  ScanLine,
+} from "lucide-react";
 
 // Web Audio API helper for retro audio feedback
 function playBeep(success: boolean) {
   try {
-    const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+    const AudioContext =
+      window.AudioContext || (window as any).webkitAudioContext;
     if (!AudioContext) return;
     const ctx = new AudioContext();
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
-    
+
     osc.connect(gain);
     gain.connect(ctx.destination);
-    
+
     if (success) {
       // High pleasant success beep
-      osc.type = 'sine';
+      osc.type = "sine";
       osc.frequency.setValueAtTime(880, ctx.currentTime); // A5
       gain.gain.setValueAtTime(0, ctx.currentTime);
       gain.gain.linearRampToValueAtTime(0.15, ctx.currentTime + 0.05);
@@ -29,7 +43,7 @@ function playBeep(success: boolean) {
       osc.stop(ctx.currentTime + 0.25);
     } else {
       // Lower warning double-beep/buzz
-      osc.type = 'sawtooth';
+      osc.type = "sawtooth";
       osc.frequency.setValueAtTime(150, ctx.currentTime); // Low G
       gain.gain.setValueAtTime(0, ctx.currentTime);
       gain.gain.linearRampToValueAtTime(0.2, ctx.currentTime + 0.05);
@@ -38,174 +52,101 @@ function playBeep(success: boolean) {
       osc.stop(ctx.currentTime + 0.4);
     }
   } catch (e) {
-    console.warn('Audio feedback failed to play', e);
+    console.warn("Audio feedback failed to play", e);
   }
 }
 
 interface QRScannerProps {
   students: Student[];
   records: AttendanceRecord[];
-  onAttendanceSuccess: (studentId: string, verifiedBy: 'qr' | 'manual', status?: 'hadir' | 'sakit' | 'izin' | 'alpa') => { success: boolean; message: string; studentName?: string; parentPhone?: string };
+  onAttendanceSuccess: (
+    studentId: string,
+    verifiedBy: "qr" | "manual",
+    status?: "hadir" | "sakit" | "izin" | "alpa",
+  ) => {
+    success: boolean;
+    message: string;
+    studentName?: string;
+    parentPhone?: string;
+  };
 }
 
-export default function QRScanner({ students, records, onAttendanceSuccess }: QRScannerProps) {
-  const [activeTab, setActiveTab] = useState<'camera' | 'file' | 'manual' | 'hardware'>('camera');
-  const [cameraState, setCameraState] = useState<'idle' | 'scanning' | 'unauthorized' | 'error'>('idle');
-  const [devices, setDevices] = useState<{ id: string; label: string }[]>([]);
-  const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
-  const [scanResult, setScanResult] = useState<{ success: boolean; message: string; name?: string; parentPhone?: string } | null>(null);
-  const [manualNis, setManualNis] = useState<string>('');
-  const [manualStatus, setManualStatus] = useState<'hadir' | 'sakit' | 'izin' | 'alpa'>('hadir');
-  const [hardwareNis, setHardwareNis] = useState<string>('');
+export default function QRScanner({
+  students,
+  records,
+  onAttendanceSuccess,
+}: QRScannerProps) {
+  const [activeTab, setActiveTab] = useState<"hardware" | "manual">("hardware");
+  const [scanResult, setScanResult] = useState<{
+    success: boolean;
+    message: string;
+    name?: string;
+    parentPhone?: string;
+  } | null>(null);
+  const [manualNis, setManualNis] = useState<string>("");
+  const [manualStatus, setManualStatus] = useState<
+    "hadir" | "sakit" | "izin" | "alpa"
+  >("hadir");
+  const [hardwareNis, setHardwareNis] = useState<string>("");
   const [isAudioMuted, setIsAudioMuted] = useState<boolean>(false);
 
   // References
-  const scannerRef = useRef<Html5Qrcode | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const hardwareInputRef = useRef<HTMLInputElement | null>(null);
 
   // Autofocus hardware scanner input
   useEffect(() => {
-    if (activeTab === 'hardware' && hardwareInputRef.current) {
+    if (activeTab === "hardware" && hardwareInputRef.current) {
       hardwareInputRef.current.focus();
     }
   }, [activeTab]);
 
   // Compute stats for simulation overview
   const studentsMap = useMemo(() => {
-    return new Map(students.map(s => [s.id, s]));
+    return new Map(students.map((s) => [s.id, s]));
   }, [students]);
-
-  // Clean and prepare Camera scanner on mount/unmount
-  useEffect(() => {
-    return () => {
-      stopCameraScanner();
-    };
-  }, []);
-
-  const startCameraScanner = async (deviceIdToUse?: string) => {
-    setScanResult(null);
-    try {
-      // Request permissions and get cameras
-      const cameraDevices = await Html5Qrcode.getCameras();
-      if (!cameraDevices || cameraDevices.length === 0) {
-        setCameraState('error');
-        return;
-      }
-
-      setDevices(cameraDevices.map(d => ({ id: d.id, label: d.label || `Kamera ${d.id.slice(0, 5)}` })));
-      
-      const defaultId = deviceIdToUse || cameraDevices[0].id;
-      setSelectedDeviceId(defaultId);
-
-      // Initialize scanner object if not already done
-      if (!scannerRef.current) {
-        scannerRef.current = new Html5Qrcode('qr-camera-element');
-      }
-
-      setCameraState('scanning');
-      
-      await scannerRef.current.start(
-        defaultId,
-        {
-          fps: 12,
-          qrbox: (width, height) => {
-            const minSize = Math.min(width, height);
-            return {
-              width: Math.floor(minSize * 0.7),
-              height: Math.floor(minSize * 0.7)
-            };
-          }
-        },
-        (decodedText) => {
-          handleQRDecoded(decodedText);
-        },
-        () => {
-          // Silent scan frame updates
-        }
-      );
-    } catch (err: any) {
-      console.error('Camera Scanner start failed', err);
-      if (err.toString().includes('NotAllowedError') || err.toString().includes('Permission denied')) {
-        setCameraState('unauthorized');
-      } else {
-        setCameraState('error');
-      }
-    }
-  };
-
-  const stopCameraScanner = async () => {
-    if (scannerRef.current && scannerRef.current.isScanning) {
-      try {
-        await scannerRef.current.stop();
-      } catch (err) {
-        console.error('Failed to stop camera scanner', err);
-      }
-    }
-    setCameraState('idle');
-  };
-
-  const handleCameraChange = async (e: ChangeEvent<HTMLSelectElement>) => {
-    const newId = e.target.value;
-    setSelectedDeviceId(newId);
-    await stopCameraScanner();
-    startCameraScanner(newId);
-  };
 
   // Main QR success parser
   const handleQRDecoded = (decodedText: string) => {
-    // Standard decoded text should contain student identification. 
+    // Standard decoded text should contain student identification.
     // E.g., "STD-001" or Nis. Let's find matches.
     const cleanText = decodedText.trim();
-    
+
     // Find if student exists by ID or NIS
-    const matchedStudent = students.find(s => s.id === cleanText || s.nis === cleanText);
-    
+    const matchedStudent = students.find(
+      (s) => s.id === cleanText || s.nis === cleanText,
+    );
+
     if (!matchedStudent) {
-      const res = { success: false, message: `Kode QR tidak dikenal: "${cleanText}"` };
+      const res = {
+        success: false,
+        message: `Kode QR tidak dikenal: "${cleanText}"`,
+      };
       setScanResult(res);
       if (!isAudioMuted) playBeep(false);
       return;
     }
 
     // Call app parent register attendance handler (by default 'hadir' via standard scan)
-    const registerResponse = onAttendanceSuccess(matchedStudent.id, 'qr', 'hadir');
-    setScanResult({ 
-      success: registerResponse.success, 
-      message: registerResponse.message, 
+    const registerResponse = onAttendanceSuccess(
+      matchedStudent.id,
+      "qr",
+      "hadir",
+    );
+    setScanResult({
+      success: registerResponse.success,
+      message: registerResponse.message,
       name: registerResponse.studentName,
-      parentPhone: registerResponse.parentPhone
+      parentPhone: registerResponse.parentPhone,
     });
     if (!isAudioMuted) playBeep(registerResponse.success);
 
     // Auto clear alert results after 4 seconds
     setTimeout(() => {
-      setScanResult(prev => {
+      setScanResult((prev) => {
         if (prev && prev.name === matchedStudent.name) return null;
         return prev;
       });
     }, 4000);
-  };
-
-  // Handle uploaded files containing QR code image
-  const handleFileUpload = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setScanResult(null);
-    const decoder = new Html5Qrcode('qr-camera-element-hidden');
-    
-    decoder.scanFile(file, true)
-      .then((decodedText) => {
-        handleQRDecoded(decodedText);
-        decoder.clear();
-      })
-      .catch((err) => {
-        console.error('File scan failed', err);
-        setScanResult({ success: false, message: 'Tidak dapat menemukan kode QR di gambar ini. Pastikan gambar jelas.' });
-        if (!isAudioMuted) playBeep(false);
-        decoder.clear();
-      });
   };
 
   // Manual submission using NIS or student ID
@@ -213,22 +154,27 @@ export default function QRScanner({ students, records, onAttendanceSuccess }: QR
     e.preventDefault();
     if (!manualNis.trim()) return;
 
-    const matched = students.find(s => s.nis === manualNis.trim() || s.id === manualNis.trim());
+    const matched = students.find(
+      (s) => s.nis === manualNis.trim() || s.id === manualNis.trim(),
+    );
     if (!matched) {
-      setScanResult({ success: false, message: `Siswa dengan NIS "${manualNis}" tidak ditemukan!` });
+      setScanResult({
+        success: false,
+        message: `Siswa dengan NIS "${manualNis}" tidak ditemukan!`,
+      });
       if (!isAudioMuted) playBeep(false);
       return;
     }
 
-    const res = onAttendanceSuccess(matched.id, 'manual', manualStatus);
+    const res = onAttendanceSuccess(matched.id, "manual", manualStatus);
     setScanResult({
       success: res.success,
       message: res.message,
       name: res.studentName,
-      parentPhone: res.parentPhone
+      parentPhone: res.parentPhone,
     });
     if (!isAudioMuted) playBeep(res.success);
-    setManualNis('');
+    setManualNis("");
 
     setTimeout(() => setScanResult(null), 4000);
   };
@@ -239,8 +185,8 @@ export default function QRScanner({ students, records, onAttendanceSuccess }: QR
     if (!hardwareNis.trim()) return;
 
     handleQRDecoded(hardwareNis.trim());
-    setHardwareNis(''); // Clear for next scan
-    
+    setHardwareNis(""); // Clear for next scan
+
     // Keep focus
     setTimeout(() => {
       if (hardwareInputRef.current) {
@@ -250,62 +196,62 @@ export default function QRScanner({ students, records, onAttendanceSuccess }: QR
   };
 
   return (
-    <div id="qr-scanner-root" className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-      
+    <div
+      id="qr-scanner-root"
+      className="grid grid-cols-1 lg:grid-cols-12 gap-6"
+    >
       {/* Left panel: Scanning Zone */}
       <div className="lg:col-span-7 bg-white p-5 rounded-2xl border border-gray-100 shadow-xs flex flex-col justify-between">
         <div>
           <div className="flex items-center justify-between border-b border-gray-100 pb-4 mb-4">
             <div>
-              <h4 className="text-base font-bold text-gray-900">Pemindaian QR Kehadiran</h4>
-              <p className="text-xs text-gray-500">Pilih metode scan atau verifikasi manual siswa</p>
+              <h4 className="text-base font-bold text-gray-900">
+                Pemindaian QR Kehadiran
+              </h4>
+              <p className="text-xs text-gray-500">
+                Pilih metode scan atau verifikasi manual siswa
+              </p>
             </div>
-            
+
             {/* Audio Toggle */}
-            <button 
+            <button
               onClick={() => setIsAudioMuted(!isAudioMuted)}
               className={`p-2 rounded-lg border transition-colors ${
-                isAudioMuted ? 'bg-red-50 border-red-100 text-red-500' : 'bg-purple-50 border-purple-100 text-purple-600'
+                isAudioMuted
+                  ? "bg-red-50 border-red-100 text-red-500"
+                  : "bg-purple-50 border-purple-100 text-purple-600"
               }`}
-              title={isAudioMuted ? 'Aktifkan Suara Beep' : 'Senapkan Suara Beep'}
+              title={
+                isAudioMuted ? "Aktifkan Suara Beep" : "Senapkan Suara Beep"
+              }
             >
               <Volume2 className="h-4 w-4" />
             </button>
           </div>
 
           {/* Verification Method Tabs */}
-          <div className="grid grid-cols-4 gap-1 p-1 bg-gray-100 rounded-xl mb-6 overflow-x-auto">
+          <div className="grid grid-cols-2 gap-1 p-1 bg-gray-100 rounded-xl mb-6 overflow-x-auto">
             <button
-              onClick={() => { setActiveTab('camera'); stopCameraScanner(); }}
+              onClick={() => {
+                setActiveTab("hardware");
+              }}
               className={`py-2 px-1 text-xs font-semibold rounded-lg flex flex-col sm:flex-row items-center justify-center gap-1.5 transition-colors ${
-                activeTab === 'camera' ? 'bg-white text-purple-700 shadow-sm' : 'text-gray-500 hover:text-gray-800'
-              }`}
-            >
-              <Camera className="h-4 w-4" />
-              <span className="hidden sm:inline">Kamera</span>
-            </button>
-            <button
-              onClick={() => { setActiveTab('file'); stopCameraScanner(); }}
-              className={`py-2 px-1 text-xs font-semibold rounded-lg flex flex-col sm:flex-row items-center justify-center gap-1.5 transition-colors ${
-                activeTab === 'file' ? 'bg-white text-purple-700 shadow-sm' : 'text-gray-500 hover:text-gray-800'
-              }`}
-            >
-              <Upload className="h-4 w-4" />
-              <span className="hidden sm:inline">Unggah</span>
-            </button>
-            <button
-              onClick={() => { setActiveTab('hardware'); stopCameraScanner(); }}
-              className={`py-2 px-1 text-xs font-semibold rounded-lg flex flex-col sm:flex-row items-center justify-center gap-1.5 transition-colors ${
-                activeTab === 'hardware' ? 'bg-white text-purple-700 shadow-sm' : 'text-gray-500 hover:text-gray-800'
+                activeTab === "hardware"
+                  ? "bg-white text-purple-700 shadow-sm"
+                  : "text-gray-500 hover:text-gray-800"
               }`}
             >
               <ScanLine className="h-4 w-4" />
               <span className="hidden sm:inline">Scanner</span>
             </button>
             <button
-              onClick={() => { setActiveTab('manual'); stopCameraScanner(); }}
+              onClick={() => {
+                setActiveTab("manual");
+              }}
               className={`py-2 px-1 text-xs font-semibold rounded-lg flex flex-col sm:flex-row items-center justify-center gap-1.5 transition-colors ${
-                activeTab === 'manual' ? 'bg-white text-purple-700 shadow-sm' : 'text-gray-500 hover:text-gray-800'
+                activeTab === "manual"
+                  ? "bg-white text-purple-700 shadow-sm"
+                  : "text-gray-500 hover:text-gray-800"
               }`}
             >
               <Keyboard className="h-4 w-4" />
@@ -313,139 +259,22 @@ export default function QRScanner({ students, records, onAttendanceSuccess }: QR
             </button>
           </div>
 
-          {/* TAB 1: Live Camera Scan */}
-          {activeTab === 'camera' && (
-            <div className="space-y-4">
-              {/* Select Camera Device */}
-              {devices.length > 0 && cameraState === 'scanning' && (
-                <div className="flex items-center space-x-2 text-xs">
-                  <label className="text-gray-500 font-medium">Pilih Kamera:</label>
-                  <select 
-                    value={selectedDeviceId}
-                    onChange={handleCameraChange}
-                    className="bg-gray-50 border border-gray-200 text-gray-700 px-2 py-1 rounded-md outline-none focus:border-purple-500"
-                  >
-                    {devices.map(d => (
-                      <option key={d.id} value={d.id}>{d.label}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {/* Camera Feed Stage */}
-              <div className="relative border-2 border-dashed border-gray-200 rounded-2xl h-[280px] bg-slate-900 flex items-center justify-center overflow-hidden">
-                <div id="qr-camera-element" className="w-full h-full object-cover"></div>
-                
-                {/* Visual Camera Frames / States overlay */}
-                {cameraState === 'idle' && (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-400 p-4 text-center">
-                    <div className="p-4 bg-gray-800/80 text-purple-400 rounded-full mb-3 animate-pulse">
-                      <Camera className="h-8 w-8" />
-                    </div>
-                    <h5 className="font-semibold text-white">Kamera Belum Aktif</h5>
-                    <p className="text-xs text-gray-400 max-w-xs mt-1">
-                      Klik tombol mulai di bawah untuk mengaktifkan kamera depan atau belakang perangkat.
-                    </p>
-                  </div>
-                )}
-
-                {cameraState === 'unauthorized' && (
-                  <div className="absolute inset-0 bg-gray-950 flex flex-col items-center justify-center text-center p-6 text-white">
-                    <AlertCircle className="h-10 w-10 text-red-500 mb-3" />
-                    <h5 className="font-semibold">Izin Kamera Ditolak</h5>
-                    <p className="text-xs text-gray-400 max-w-xs mt-1 leading-relaxed">
-                      Izinkan aplikasi mengakses kamera Anda pada setelan peramban untuk menggunakan pemindai QR langsung.
-                    </p>
-                  </div>
-                )}
-
-                {cameraState === 'error' && (
-                  <div className="absolute inset-0 bg-gray-950 flex flex-col items-center justify-center text-center p-6 text-white">
-                    <AlertCircle className="h-10 w-10 text-rose-400 mb-2" />
-                    <h5 className="font-semibold text-rose-300">Kamera Tidak Ditemukan</h5>
-                    <p className="text-xs text-gray-400 max-w-xs mt-1">
-                      Gagal mendeteksi modul kamera atau koneksi kamera sedang digunakan aplikasi lain.
-                    </p>
-                  </div>
-                )}
-
-                {cameraState === 'scanning' && (
-                  <>
-                    {/* Retro animated target frame */}
-                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[180px] h-[180px] border-2 border-emerald-400 rounded-lg pointer-events-none">
-                      {/* Laser red horizontal bar */}
-                      <div className="absolute left-0 right-0 h-0.5 bg-red-500 shadow-[0_0_10px_#ef4444] animate-bounce top-2"></div>
-                      {/* Frame corner brackets */}
-                      <div className="absolute top-0 left-0 w-3 h-3 border-t-4 border-l-4 border-emerald-400 -mt-1 -ml-1"></div>
-                      <div className="absolute top-0 right-0 w-3 h-3 border-t-4 border-r-4 border-emerald-400 -mt-1 -mr-1"></div>
-                      <div className="absolute bottom-0 left-0 w-3 h-3 border-b-4 border-l-4 border-emerald-400 -mb-1 -ml-1"></div>
-                      <div className="absolute bottom-0 right-0 w-3 h-3 border-b-4 border-r-4 border-emerald-400 -mb-1 -mr-1"></div>
-                    </div>
-                    <span className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-black/70 text-[10px] text-emerald-400 font-semibold px-2.5 py-1 rounded-full uppercase tracking-wider animate-pulse">
-                      Live Scanning Active
-                    </span>
-                  </>
-                )}
-              </div>
-
-              {/* Start / Stop Toggles */}
-              <div className="flex justify-center">
-                {cameraState === 'scanning' ? (
-                  <button
-                    onClick={stopCameraScanner}
-                    className="px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
-                  >
-                    <Square className="h-4 w-4 fill-white" /> Matikan Kamera
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => startCameraScanner()}
-                    className="px-6 py-2.5 bg-purple-700 hover:bg-purple-800 text-white text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
-                  >
-                    <Play className="h-4 w-4 fill-white" /> Aktifkan Kamera Scanner
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* TAB 2: Scan from Image File */}
-          {activeTab === 'file' && (
-            <div className="space-y-4">
-              <div 
-                onClick={() => fileInputRef.current?.click()}
-                className="border-2 border-dashed border-gray-200 hover:border-purple-400 bg-gray-50/50 hover:bg-purple-50/10 rounded-2xl h-[240px] flex flex-col items-center justify-center p-6 text-center cursor-pointer transition-all"
-              >
-                <Upload className="h-10 w-10 text-purple-600 mb-3 stroke-1" />
-                <h5 className="font-semibold text-gray-800 text-sm">Pilih Gambar QR Code</h5>
-                <p className="text-xs text-gray-500 max-w-xs mt-1 leading-relaxed">
-                  Pilih file gambar kartu siswa, tangkapan layar, atau unggah foto QR code dari ponsel Anda.
-                </p>
-                <span className="mt-4 px-3 py-1 bg-white border border-gray-200 text-[11px] font-semibold text-gray-600 rounded-lg shadow-2xs">
-                  Unggah File
-                </span>
-                <input 
-                  type="file" 
-                  ref={fileInputRef} 
-                  onChange={handleFileUpload} 
-                  accept="image/*" 
-                  className="hidden" 
-                />
-              </div>
-              <div id="qr-camera-element-hidden" className="hidden"></div>
-            </div>
-          )}
-
           {/* TAB 3: Hardware Scanner */}
-          {activeTab === 'hardware' && (
+          {activeTab === "hardware" && (
             <div className="space-y-4">
               <div className="bg-blue-50/50 border border-blue-100 rounded-2xl h-[240px] flex flex-col items-center justify-center p-6 text-center">
                 <ScanLine className="h-10 w-10 text-blue-600 mb-3 stroke-1" />
-                <h5 className="font-semibold text-gray-800 text-sm">Alat Scanner Aktif</h5>
+                <h5 className="font-semibold text-gray-800 text-sm">
+                  Alat Scanner Aktif
+                </h5>
                 <p className="text-xs text-gray-500 max-w-xs mt-1 leading-relaxed mb-4">
-                  Arahkan kursor ke dalam kotak di bawah ini, lalu scan barcode kartu siswa.
+                  Arahkan kursor ke dalam kotak di bawah ini, lalu scan barcode
+                  kartu siswa.
                 </p>
-                <form onSubmit={handleHardwareSubmit} className="w-full max-w-[200px]">
+                <form
+                  onSubmit={handleHardwareSubmit}
+                  className="w-full max-w-[200px]"
+                >
                   <input
                     ref={hardwareInputRef}
                     type="text"
@@ -456,19 +285,23 @@ export default function QRScanner({ students, records, onAttendanceSuccess }: QR
                     autoFocus
                   />
                   {/* Hidden submit to handle enter natively */}
-                  <button type="submit" className="hidden">Submit</button>
+                  <button type="submit" className="hidden">
+                    Submit
+                  </button>
                 </form>
               </div>
             </div>
           )}
 
           {/* TAB 4: Manual NIS Keypad Entry */}
-          {activeTab === 'manual' && (
+          {activeTab === "manual" && (
             <form onSubmit={handleManualSubmit} className="space-y-4">
               <div className="bg-gray-50 p-4 rounded-xl border border-gray-150 space-y-3">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Pilih Status Absensi</label>
+                    <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">
+                      Pilih Status Absensi
+                    </label>
                     <select
                       value={manualStatus}
                       onChange={(e) => setManualStatus(e.target.value as any)}
@@ -481,8 +314,10 @@ export default function QRScanner({ students, records, onAttendanceSuccess }: QR
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Nomor Induk Siswa (NIS)</label>
-                    <input 
+                    <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">
+                      Nomor Induk Siswa (NIS)
+                    </label>
+                    <input
                       type="text"
                       placeholder="Contoh: 21001"
                       value={manualNis}
@@ -494,22 +329,39 @@ export default function QRScanner({ students, records, onAttendanceSuccess }: QR
 
                 {/* Digital Virtual Keypad */}
                 <div className="pt-2">
-                  <span className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider text-center mb-2">Keypad Numerik</span>
+                  <span className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider text-center mb-2">
+                    Keypad Numerik
+                  </span>
                   <div className="grid grid-cols-3 gap-2 max-w-[240px] mx-auto">
-                    {['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'Hapus', 'OK'].map((key) => {
-                      if (key === 'Hapus') {
+                    {[
+                      "1",
+                      "2",
+                      "3",
+                      "4",
+                      "5",
+                      "6",
+                      "7",
+                      "8",
+                      "9",
+                      "0",
+                      "Hapus",
+                      "OK",
+                    ].map((key) => {
+                      if (key === "Hapus") {
                         return (
                           <button
                             key={key}
                             type="button"
-                            onClick={() => setManualNis(prev => prev.slice(0, -1))}
+                            onClick={() =>
+                              setManualNis((prev) => prev.slice(0, -1))
+                            }
                             className="py-2.5 bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold rounded-lg text-xs transition-colors"
                           >
                             ⌫
                           </button>
                         );
                       }
-                      if (key === 'OK') {
+                      if (key === "OK") {
                         return (
                           <button
                             key={key}
@@ -524,7 +376,7 @@ export default function QRScanner({ students, records, onAttendanceSuccess }: QR
                         <button
                           key={key}
                           type="button"
-                          onClick={() => setManualNis(prev => prev + key)}
+                          onClick={() => setManualNis((prev) => prev + key)}
                           className="py-2.5 bg-white border border-gray-200 hover:bg-gray-100 font-mono font-bold text-gray-800 rounded-lg text-sm transition-colors shadow-2xs"
                         >
                           {key}
@@ -536,16 +388,17 @@ export default function QRScanner({ students, records, onAttendanceSuccess }: QR
               </div>
             </form>
           )}
-
         </div>
 
         {/* Scan Status Alerts */}
         {scanResult && (
-          <div className={`mt-5 p-4 rounded-xl border flex items-start gap-3 transition-all duration-300 ${
-            scanResult.success 
-              ? 'bg-emerald-50 border-emerald-100 text-emerald-800' 
-              : 'bg-red-50 border-red-100 text-red-800'
-          }`}>
+          <div
+            className={`mt-5 p-4 rounded-xl border flex items-start gap-3 transition-all duration-300 ${
+              scanResult.success
+                ? "bg-emerald-50 border-emerald-100 text-emerald-800"
+                : "bg-red-50 border-red-100 text-red-800"
+            }`}
+          >
             <div className="shrink-0 mt-0.5">
               {scanResult.success ? (
                 <CheckCircle className="h-5 w-5 text-emerald-600" />
@@ -555,7 +408,7 @@ export default function QRScanner({ students, records, onAttendanceSuccess }: QR
             </div>
             <div className="text-xs">
               <span className="block font-bold text-sm">
-                {scanResult.success ? 'ABSEN BERHASIL' : 'ABSEN GAGAL'}
+                {scanResult.success ? "ABSEN BERHASIL" : "ABSEN GAGAL"}
               </span>
               <p className="mt-0.5 leading-relaxed font-medium">
                 {scanResult.message}
@@ -563,16 +416,23 @@ export default function QRScanner({ students, records, onAttendanceSuccess }: QR
               {scanResult.success && scanResult.name && (
                 <div className="mt-1 flex flex-col sm:flex-row sm:items-center gap-2">
                   <p className="text-[10px] text-emerald-600 font-mono uppercase tracking-wider">
-                    Siswa: {scanResult.name} | Waktu: {new Date().toLocaleTimeString('id-ID')}
+                    Siswa: {scanResult.name} | Waktu:{" "}
+                    {new Date().toLocaleTimeString("id-ID")}
                   </p>
                   {scanResult.parentPhone && (
                     <a
-                      href={`https://wa.me/${scanResult.parentPhone.replace(/[^0-9]/g, '').replace(/^0/, '62')}?text=Halo%20Bapak/Ibu,%20${encodeURIComponent(scanResult.name)}%20baru%20saja%20melakukan%20absensi%20pada%20${encodeURIComponent(new Date().toLocaleTimeString('id-ID'))}.`}
+                      href={`https://wa.me/${scanResult.parentPhone.replace(/[^0-9]/g, "").replace(/^0/, "62")}?text=Halo%20Bapak/Ibu,%20${encodeURIComponent(scanResult.name)}%20baru%20saja%20melakukan%20absensi%20pada%20${encodeURIComponent(new Date().toLocaleTimeString("id-ID"))}.`}
                       target="_blank"
                       rel="noreferrer"
                       className="inline-flex items-center gap-1 bg-emerald-500 hover:bg-emerald-600 text-white px-2 py-1 rounded text-[10px] font-bold transition-colors"
                     >
-                      <svg viewBox="0 0 24 24" fill="currentColor" className="w-3 h-3"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 0 0-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z"/></svg>
+                      <svg
+                        viewBox="0 0 24 24"
+                        fill="currentColor"
+                        className="w-3 h-3"
+                      >
+                        <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 0 0-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z" />
+                      </svg>
                       Kirim WA
                     </a>
                   )}
@@ -581,40 +441,59 @@ export default function QRScanner({ students, records, onAttendanceSuccess }: QR
             </div>
           </div>
         )}
-
       </div>
 
       {/* Right panel: Recent Scan Log Live stream */}
       <div className="lg:col-span-5 bg-white p-5 rounded-2xl border border-gray-100 shadow-xs flex flex-col justify-between">
         <div>
-          <h4 className="text-base font-bold text-gray-900 mb-1">Riwayat Pindai Terkini</h4>
-          <p className="text-xs text-gray-500 mb-4">Daftar siswa yang baru saja terverifikasi tap QR hari ini</p>
-          
+          <h4 className="text-base font-bold text-gray-900 mb-1">
+            Riwayat Pindai Terkini
+          </h4>
+          <p className="text-xs text-gray-500 mb-4">
+            Daftar siswa yang baru saja terverifikasi tap QR hari ini
+          </p>
+
           <div className="space-y-3 max-h-[360px] overflow-y-auto pr-1">
-            {records.filter(r => new Date(r.timestamp).toDateString() === new Date().toDateString()).length === 0 ? (
+            {records.filter(
+              (r) =>
+                new Date(r.timestamp).toDateString() ===
+                new Date().toDateString(),
+            ).length === 0 ? (
               <div className="py-12 flex flex-col items-center justify-center text-gray-400 text-center">
                 <div className="p-3 bg-gray-50 rounded-full mb-2">
-                  <Camera className="h-6 w-6 stroke-1 text-gray-400" />
+                  <ScanLine className="h-6 w-6 stroke-1 text-gray-400" />
                 </div>
-                <p className="text-xs">Belum ada aktivitas pindai QR hari ini</p>
+                <p className="text-xs">
+                  Belum ada aktivitas pindai QR hari ini
+                </p>
               </div>
             ) : (
               records
-                .filter(r => new Date(r.timestamp).toDateString() === new Date().toDateString())
+                .filter(
+                  (r) =>
+                    new Date(r.timestamp).toDateString() ===
+                    new Date().toDateString(),
+                )
                 // Sort latest first
-                .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+                .sort(
+                  (a, b) =>
+                    new Date(b.timestamp).getTime() -
+                    new Date(a.timestamp).getTime(),
+                )
                 .slice(0, 5)
                 .map((r) => {
                   const s = studentsMap.get(r.studentId);
                   return (
-                    <div 
-                      key={r.id} 
+                    <div
+                      key={r.id}
                       className="p-3 bg-gray-50 border border-gray-100 rounded-xl flex items-center justify-between hover:bg-gray-100/40 transition-colors"
                     >
                       <div className="truncate pr-2">
-                        <div className="font-semibold text-gray-800 text-xs truncate">{r.studentName}</div>
+                        <div className="font-semibold text-gray-800 text-xs truncate">
+                          {r.studentName}
+                        </div>
                         <div className="text-[10px] text-gray-400 font-mono mt-0.5">
-                          NIS: {s?.nis || '-'} • {r.className}
+                          NIS: {s?.nis || "-"} • {r.className}
                         </div>
                       </div>
                       <div className="text-right shrink-0">
@@ -622,7 +501,11 @@ export default function QRScanner({ students, records, onAttendanceSuccess }: QR
                           {r.status}
                         </span>
                         <div className="text-[9px] text-gray-400 font-mono mt-1">
-                          {new Date(r.timestamp).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                          {new Date(r.timestamp).toLocaleTimeString("id-ID", {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                            second: "2-digit",
+                          })}
                         </div>
                       </div>
                     </div>
@@ -633,10 +516,11 @@ export default function QRScanner({ students, records, onAttendanceSuccess }: QR
         </div>
 
         <div className="mt-6 border-t border-gray-100 pt-4 text-[11px] text-gray-400 leading-relaxed">
-          💡 <strong>Ketentuan Jam Masuk:</strong> Pastikan siswa memindai kode QR pada rentang jam absen sekolah yang telah disepakati untuk menghindari kalkulasi keterlambatan.
+          💡 <strong>Ketentuan Jam Masuk:</strong> Pastikan siswa memindai kode
+          QR pada rentang jam absen sekolah yang telah disepakati untuk
+          menghindari kalkulasi keterlambatan.
         </div>
       </div>
-
     </div>
   );
 }
