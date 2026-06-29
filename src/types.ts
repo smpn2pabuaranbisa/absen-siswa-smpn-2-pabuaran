@@ -36,6 +36,12 @@ export interface AttendanceConfig {
   waApiPayload?: string; // For Custom, JSON string template
   isConfigured?: boolean;
   logoUrl?: string; // Base64 or external URL for school logo
+  headmasterName?: string;
+  headmasterNip?: string;
+  academicYear?: string;
+  signatureImage?: string;
+  stampImage?: string;
+  teachers?: Record<string, { name: string; nip: string }>;
 }
 
 export interface CalendarEvent {

@@ -930,6 +930,8 @@ export default function App() {
               schoolName={config.schoolName}
               logoUrl={config.logoUrl}
               customClasses={config.customClasses}
+              config={config}
+              onUpdateConfig={persistConfig}
             />
           )}
 
@@ -941,6 +943,7 @@ export default function App() {
               onDeleteRecord={handleDeleteRecord}
               onAddManualRecord={handleAddManualRecord}
               activeClass={config.selectedClassFilter}
+              config={config}
             />
           )}
 

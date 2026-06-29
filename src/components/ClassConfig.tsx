@@ -1,4 +1,4 @@
-import { useState, useMemo, FormEvent, ChangeEvent } from 'react';
+import { useState, useMemo, useEffect, FormEvent, ChangeEvent } from 'react';
 import { AttendanceConfig, Student, AttendanceRecord } from '../types';
 import { 
   School, Clock, Sliders, Save, Database, 
@@ -37,14 +37,21 @@ export default function ClassConfig({
   
   // Headmaster states
   const [headmasterName, setHeadmasterName] = useState(() => {
-    return localStorage.getItem('absensi_qr_headmaster_name') || 'Drs. H. Suherman, M.Pd';
+    return config.headmasterName || localStorage.getItem('absensi_qr_headmaster_name') || 'Drs. H. Suherman, M.Pd';
   });
   const [headmasterNip, setHeadmasterNip] = useState(() => {
-    return localStorage.getItem('absensi_qr_headmaster_nip') || '197403122005011002';
+    return config.headmasterNip || localStorage.getItem('absensi_qr_headmaster_nip') || '197403122005011002';
   });
   const [academicYear, setAcademicYear] = useState(() => {
-    return localStorage.getItem('absensi_qr_academic_year') || 'TA. 2026/2027';
+    return config.academicYear || localStorage.getItem('absensi_qr_academic_year') || 'TA. 2026/2027';
   });
+
+  // Keep local states in sync when global config changes
+  useEffect(() => {
+    if (config.headmasterName) setHeadmasterName(config.headmasterName);
+    if (config.headmasterNip) setHeadmasterNip(config.headmasterNip);
+    if (config.academicYear) setAcademicYear(config.academicYear);
+  }, [config.headmasterName, config.headmasterNip, config.academicYear]);
   
   // Custom class list state
   const [newClassName, setNewClassName] = useState('');
@@ -82,6 +89,9 @@ export default function ClassConfig({
       waApiHeaders: waApiHeaders.trim(),
       waApiPayload: waApiPayload.trim(),
       logoUrl,
+      headmasterName: headmasterName.trim(),
+      headmasterNip: headmasterNip.trim(),
+      academicYear: academicYear.trim(),
     });
     
     localStorage.setItem('absensi_qr_headmaster_name', headmasterName.trim());
@@ -547,8 +557,8 @@ export default function ClassConfig({
             {uniqueClasses.map((className) => {
               const studentCount = students.filter(s => s.className === className).length;
               const isCustom = config.customClasses?.includes(className);
-              const teacherName = localStorage.getItem(`absensi_qr_teacher_name_${className}`) || '';
-              const teacherNip = localStorage.getItem(`absensi_qr_teacher_nip_${className}`) || '';
+              const teacherName = config.teachers?.[className]?.name || localStorage.getItem(`absensi_qr_teacher_name_${className}`) || '';
+              const teacherNip = config.teachers?.[className]?.nip || localStorage.getItem(`absensi_qr_teacher_nip_${className}`) || '';
 
               return (
                 <div key={className} className="p-3 bg-gray-50 border border-gray-100 rounded-xl flex flex-col gap-2 text-xs">
@@ -818,6 +828,19 @@ export default function ClassConfig({
               </button>
               <button
                 onClick={() => {
+                  const currentTeachers = config.teachers || {};
+                  const updatedTeachers = {
+                    ...currentTeachers,
+                    [editingClassTeacher!]: {
+                      name: editingTeacherName.trim(),
+                      nip: editingTeacherNip.trim()
+                    }
+                  };
+                  onUpdateConfig({
+                    ...config,
+                    teachers: updatedTeachers
+                  });
+
                   if (editingTeacherName.trim()) {
                     localStorage.setItem(`absensi_qr_teacher_name_${editingClassTeacher}`, editingTeacherName.trim());
                   } else {

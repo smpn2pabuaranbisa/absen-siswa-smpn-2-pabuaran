@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, FormEvent, ChangeEvent } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { Student } from '../types';
+import { Student, AttendanceConfig } from '../types';
 import { 
   UserPlus, Search, Edit2, Trash2, QrCode, 
   X, Download, Printer, FileSpreadsheet, FileUp, 
@@ -102,6 +102,8 @@ interface StudentListProps {
   schoolName?: string;
   logoUrl?: string;
   customClasses?: string[];
+  config?: AttendanceConfig;
+  onUpdateConfig?: (updatedConfig: AttendanceConfig) => void;
 }
 
 export default function StudentList({ 
@@ -113,7 +115,9 @@ export default function StudentList({
   activeClass,
   schoolName = 'SMA NEGERI 1 ABSENSI',
   logoUrl,
-  customClasses = []
+  customClasses = [],
+  config,
+  onUpdateConfig
 }: StudentListProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -140,19 +144,19 @@ export default function StudentList({
 
   // ID Card Customization Details
   const [headmasterName, setHeadmasterName] = useState(() => {
-    return localStorage.getItem('absensi_qr_headmaster_name') || 'Drs. H. Suherman, M.Pd';
+    return config?.headmasterName || localStorage.getItem('absensi_qr_headmaster_name') || 'Drs. H. Suherman, M.Pd';
   });
   const [headmasterNip, setHeadmasterNip] = useState(() => {
-    return localStorage.getItem('absensi_qr_headmaster_nip') || '197403122005011002';
+    return config?.headmasterNip || localStorage.getItem('absensi_qr_headmaster_nip') || '197403122005011002';
   });
   const [academicYear, setAcademicYear] = useState(() => {
-    return localStorage.getItem('absensi_qr_academic_year') || 'TA. 2026/2027';
+    return config?.academicYear || localStorage.getItem('absensi_qr_academic_year') || 'TA. 2026/2027';
   });
   const [signatureImage, setSignatureImage] = useState<string | null>(() => {
-    return localStorage.getItem('absensi_qr_signature_image') || null;
+    return config?.signatureImage || localStorage.getItem('absensi_qr_signature_image') || null;
   });
   const [stampImage, setStampImage] = useState<string | null>(() => {
-    return localStorage.getItem('absensi_qr_stamp_image') || null;
+    return config?.stampImage || localStorage.getItem('absensi_qr_stamp_image') || null;
   });
 
   // Advanced ID Card Configuration
@@ -180,6 +184,64 @@ export default function StudentList({
     }
     return defaultCfg;
   });
+
+  // Keep local states in sync when global config changes (e.g. edited from other devices or screens)
+  useEffect(() => {
+    if (config?.headmasterName && config.headmasterName !== headmasterName) {
+      setHeadmasterName(config.headmasterName);
+    }
+  }, [config?.headmasterName]);
+
+  useEffect(() => {
+    if (config?.headmasterNip && config.headmasterNip !== headmasterNip) {
+      setHeadmasterNip(config.headmasterNip);
+    }
+  }, [config?.headmasterNip]);
+
+  useEffect(() => {
+    if (config?.academicYear && config.academicYear !== academicYear) {
+      setAcademicYear(config.academicYear);
+    }
+  }, [config?.academicYear]);
+
+  useEffect(() => {
+    if (config?.signatureImage !== undefined && config.signatureImage !== signatureImage) {
+      setSignatureImage(config.signatureImage);
+    }
+  }, [config?.signatureImage]);
+
+  useEffect(() => {
+    if (config?.stampImage !== undefined && config.stampImage !== stampImage) {
+      setStampImage(config.stampImage);
+    }
+  }, [config?.stampImage]);
+
+  // Debounce saving of card config changes to Firestore
+  useEffect(() => {
+    if (!config || !onUpdateConfig) return;
+    
+    const delayDebounceFn = setTimeout(() => {
+      const needsUpdate = 
+        config.headmasterName !== headmasterName ||
+        config.headmasterNip !== headmasterNip ||
+        config.academicYear !== academicYear ||
+        config.signatureImage !== signatureImage ||
+        config.stampImage !== stampImage;
+        
+      if (needsUpdate) {
+        onUpdateConfig({
+          ...config,
+          headmasterName,
+          headmasterNip,
+          academicYear,
+          signatureImage: signatureImage || "",
+          stampImage: stampImage || ""
+        });
+      }
+    }, 1000);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [headmasterName, headmasterNip, academicYear, signatureImage, stampImage, config, onUpdateConfig]);
 
   // Keep saved configuration persistent in localStorage
   useEffect(() => {

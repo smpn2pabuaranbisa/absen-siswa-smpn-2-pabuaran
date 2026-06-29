@@ -1,5 +1,5 @@
 import { useState, useMemo, FormEvent } from 'react';
-import { AttendanceRecord, Student, AttendanceStatus } from '../types';
+import { AttendanceRecord, Student, AttendanceStatus, AttendanceConfig } from '../types';
 import { 
   Calendar, Search, Filter, Edit2, Trash2, 
   FileSpreadsheet, ArrowUpDown, ChevronDown, Check, X,
@@ -13,6 +13,7 @@ interface AttendanceLogsProps {
   onDeleteRecord: (recordId: string) => void;
   onAddManualRecord: (studentId: string, status: AttendanceStatus, date: string, notes?: string) => void;
   activeClass: string;
+  config?: AttendanceConfig;
 }
 
 export default function AttendanceLogs({
@@ -21,7 +22,8 @@ export default function AttendanceLogs({
   onUpdateRecord,
   onDeleteRecord,
   onAddManualRecord,
-  activeClass
+  activeClass,
+  config
 }: AttendanceLogsProps) {
   const [viewMode, setViewMode] = useState<'daily' | 'monthly'>('daily');
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth());
@@ -169,16 +171,16 @@ export default function AttendanceLogs({
       return;
     }
 
-    const hName = localStorage.getItem('absensi_qr_headmaster_name') || 'Drs. H. Suherman, M.Pd';
-    const hNip = localStorage.getItem('absensi_qr_headmaster_nip') || '197403122005011002';
-    const sigImg = localStorage.getItem('absensi_qr_signature_image') || '';
-    const stampImg = localStorage.getItem('absensi_qr_stamp_image') || '';
+    const hName = config?.headmasterName || localStorage.getItem('absensi_qr_headmaster_name') || 'Drs. H. Suherman, M.Pd';
+    const hNip = config?.headmasterNip || localStorage.getItem('absensi_qr_headmaster_nip') || '197403122005011002';
+    const sigImg = config?.signatureImage || localStorage.getItem('absensi_qr_signature_image') || '';
+    const stampImg = config?.stampImage || localStorage.getItem('absensi_qr_stamp_image') || '';
 
     const teacherName = activeClass !== 'Semua Kelas'
-      ? (localStorage.getItem(`absensi_qr_teacher_name_${activeClass}`) || '')
+      ? (config?.teachers?.[activeClass]?.name || localStorage.getItem(`absensi_qr_teacher_name_${activeClass}`) || '')
       : '';
     const teacherNip = activeClass !== 'Semua Kelas'
-      ? (localStorage.getItem(`absensi_qr_teacher_nip_${activeClass}`) || '')
+      ? (config?.teachers?.[activeClass]?.nip || localStorage.getItem(`absensi_qr_teacher_nip_${activeClass}`) || '')
       : '';
 
     const dayCols = Array.from({ length: daysInMonth }, (_, i) => i + 1);
