@@ -496,11 +496,23 @@ export default function QRScanner({
                           NIS: {s?.nis || "-"} • {r.className}
                         </div>
                       </div>
-                      <div className="text-right shrink-0">
-                        <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
-                          {r.status}
-                        </span>
-                        <div className="text-[9px] text-gray-400 font-mono mt-1">
+                      <div className="text-right shrink-0 flex flex-col items-end gap-1">
+                        <div className="flex gap-1">
+                          {r.type === 'pulang' && (
+                            <span className="text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
+                              PULANG
+                            </span>
+                          )}
+                          {(!r.type || r.type === 'datang') && r.status === 'hadir' && (
+                            <span className="text-[10px] bg-teal-50 text-teal-700 border border-teal-100 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
+                              DATANG
+                            </span>
+                          )}
+                          <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
+                            {r.status}
+                          </span>
+                        </div>
+                        <div className="text-[9px] text-gray-400 font-mono mt-0.5">
                           {new Date(r.timestamp).toLocaleTimeString("id-ID", {
                             hour: "2-digit",
                             minute: "2-digit",

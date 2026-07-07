@@ -418,6 +418,7 @@ export default function App() {
     message: string;
     studentName?: string;
     parentPhone?: string;
+    type?: 'datang' | 'pulang';
   } => {
     const student = students.find((s) => s.id === studentId);
     if (!student) {
@@ -429,17 +430,31 @@ export default function App() {
 
     const todayStr = new Date().toDateString();
 
-    // Check if already scanned today
-    const alreadyScanned = records.find((r) => {
+    const todayRecords = records.filter((r) => {
       const isToday = new Date(r.timestamp).toDateString() === todayStr;
       return r.studentId === studentId && isToday;
     });
 
-    if (alreadyScanned) {
+    const datangRecord = todayRecords.find(r => r.type === 'datang' || !r.type);
+    const pulangRecord = todayRecords.find(r => r.type === 'pulang');
+
+    let scanType: 'datang' | 'pulang' = 'datang';
+
+    if (datangRecord && pulangRecord) {
       return {
         success: false,
-        message: `Siswa "${student.name}" sudah melakukan absensi hari ini pada jam ${new Date(alreadyScanned.timestamp).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}!`,
+        message: `Siswa "${student.name}" sudah menyelesaikan absen datang dan pulang hari ini!`,
       };
+    } else if (datangRecord) {
+      // Prevent accidental double scan within 3 hours
+      const timeDiff = new Date().getTime() - new Date(datangRecord.timestamp).getTime();
+      if (timeDiff < 3 * 60 * 60 * 1000) {
+        return {
+          success: false,
+          message: `Siswa "${student.name}" baru saja absen datang. Silakan tunggu 3 jam untuk absen pulang.`,
+        };
+      }
+      scanType = 'pulang';
     }
 
     // Determine status (Hadir/Terlambat or Custom specified)
@@ -447,18 +462,23 @@ export default function App() {
     let note: string | undefined = undefined;
 
     if (verifiedBy === "qr") {
-      // Compare time against limit (CheckInEnd)
-      const now = new Date();
-      const [limitHour, limitMin] = config.checkInEnd.split(":").map(Number);
-      const limitTime = new Date();
-      limitTime.setHours(limitHour, limitMin, 0, 0);
+      if (scanType === 'datang') {
+        // Compare time against limit (CheckInEnd)
+        const now = new Date();
+        const [limitHour, limitMin] = config.checkInEnd.split(":").map(Number);
+        const limitTime = new Date();
+        limitTime.setHours(limitHour, limitMin, 0, 0);
 
-      if (now > limitTime) {
-        statusToRecord = "hadir";
-        note = "Terlambat (Pindai QR)";
+        if (now > limitTime) {
+          statusToRecord = "hadir";
+          note = "Terlambat (Pindai QR)";
+        } else {
+          statusToRecord = "hadir";
+          note = "Tepat Waktu (Pindai QR)";
+        }
       } else {
         statusToRecord = "hadir";
-        note = "Tepat Waktu (Pindai QR)";
+        note = "Absen Pulang (Pindai QR)";
       }
     }
 
@@ -472,6 +492,7 @@ export default function App() {
       status: statusToRecord,
       verifiedBy,
       notes: note,
+      type: scanType,
     };
 
     persistRecords([newRecord, ...records]);
@@ -489,7 +510,8 @@ export default function App() {
           hour: "2-digit",
           minute: "2-digit",
         });
-        const waMessage = `Halo Bapak/Ibu,\n\nAnak Anda, *${student.name}* (Kelas ${student.className}), telah tercatat *${statusToRecord.toUpperCase()}* pada pukul *${timeStr}*.\n\nTerima kasih,\n${config.schoolName}`;
+        const activityStr = scanType === 'pulang' ? 'absen pulang' : 'absen datang';
+        const waMessage = `Halo Bapak/Ibu,\n\nAnak Anda, *${student.name}* (Kelas ${student.className}), telah tercatat melakukan *${activityStr}* dengan status *${statusToRecord.toUpperCase()}* pada pukul *${timeStr}*.\n\nTerima kasih,\n${config.schoolName}`;
 
         const provider = config.waProvider || "fonnte";
 
@@ -544,9 +566,10 @@ export default function App() {
 
     return {
       success: true,
-      message: `${student.name} berhasil diabsen [${statusToRecord.toUpperCase()}]!`,
+      message: `${student.name} berhasil diabsen ${scanType === 'pulang' ? 'pulang' : 'datang'} [${statusToRecord.toUpperCase()}]!`,
       studentName: student.name,
       parentPhone: student.parentPhone,
+      type: scanType,
     };
   };
 

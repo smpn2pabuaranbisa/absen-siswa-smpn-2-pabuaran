@@ -20,6 +20,7 @@ export interface AttendanceRecord {
   status: AttendanceStatus;
   verifiedBy: 'qr' | 'manual';
   notes?: string;
+  type?: 'datang' | 'pulang';
 }
 
 export interface AttendanceConfig {

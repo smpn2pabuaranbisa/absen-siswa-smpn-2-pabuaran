@@ -46,15 +46,23 @@ export default function DashboardStats({ students, records, activeClass }: Dashb
     let izin = 0;
     let alpa = 0;
 
+    // To prevent double counting students with both Datang and Pulang,
+    // we take only the latest record for each student today for stats
+    const latestRecordPerStudent = new Map<string, AttendanceRecord>();
     todayRecords.forEach(r => {
+      const existing = latestRecordPerStudent.get(r.studentId);
+      if (!existing || new Date(r.timestamp) > new Date(existing.timestamp)) {
+        latestRecordPerStudent.set(r.studentId, r);
+      }
+    });
+
+    latestRecordPerStudent.forEach(r => {
       if (r.status === 'hadir') hadir++;
       else if (r.status === 'sakit') sakit++;
       else if (r.status === 'izin') izin++;
       else if (r.status === 'alpa') alpa++;
     });
 
-    // Unmarked students count as Alpa by default for today's active rate if they haven't checked in, 
-    // or we can calculate the current checked-in rate. Let's make it intuitive:
     // Any student who is NOT marked yet is "Belum Absen"
     const belumAbsen = Math.max(0, total - recordedIds.size);
     // Let's assume unmarked are implicitly "Alpa" for final calculations or just count active checked-in percentage
@@ -105,12 +113,21 @@ export default function DashboardStats({ students, records, activeClass }: Dashb
       last7Days.push(d);
     }
 
+    const processedStudentIdsPerDay = new Map<string, Set<string>>();
+
     records.forEach(r => {
       const rDate = new Date(r.timestamp);
       const key = rDate.toDateString();
       if (daysMap[key] && studentIdsInClass.has(r.studentId)) {
-        if (r.status === 'hadir') {
+        let setForDay = processedStudentIdsPerDay.get(key);
+        if (!setForDay) {
+          setForDay = new Set();
+          processedStudentIdsPerDay.set(key, setForDay);
+        }
+
+        if (r.status === 'hadir' && !setForDay.has(r.studentId)) {
           daysMap[key].hadir++;
+          setForDay.add(r.studentId);
         }
       }
     });

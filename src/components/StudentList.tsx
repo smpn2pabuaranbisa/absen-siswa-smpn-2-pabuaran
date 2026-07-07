@@ -144,13 +144,13 @@ export default function StudentList({
 
   // ID Card Customization Details
   const [headmasterName, setHeadmasterName] = useState(() => {
-    return config?.headmasterName || localStorage.getItem('absensi_qr_headmaster_name') || 'Drs. H. Suherman, M.Pd';
+    return config?.headmasterName || localStorage.getItem('absensi_qr_headmaster_name') || '';
   });
   const [headmasterNip, setHeadmasterNip] = useState(() => {
-    return config?.headmasterNip || localStorage.getItem('absensi_qr_headmaster_nip') || '197403122005011002';
+    return config?.headmasterNip || localStorage.getItem('absensi_qr_headmaster_nip') || '';
   });
   const [academicYear, setAcademicYear] = useState(() => {
-    return config?.academicYear || localStorage.getItem('absensi_qr_academic_year') || 'TA. 2026/2027';
+    return config?.academicYear || localStorage.getItem('absensi_qr_academic_year') || '';
   });
   const [signatureImage, setSignatureImage] = useState<string | null>(() => {
     return config?.signatureImage || localStorage.getItem('absensi_qr_signature_image') || null;
@@ -187,19 +187,19 @@ export default function StudentList({
 
   // Keep local states in sync when global config changes (e.g. edited from other devices or screens)
   useEffect(() => {
-    if (config?.headmasterName && config.headmasterName !== headmasterName) {
+    if (config?.headmasterName !== undefined && config.headmasterName !== headmasterName) {
       setHeadmasterName(config.headmasterName);
     }
   }, [config?.headmasterName]);
 
   useEffect(() => {
-    if (config?.headmasterNip && config.headmasterNip !== headmasterNip) {
+    if (config?.headmasterNip !== undefined && config.headmasterNip !== headmasterNip) {
       setHeadmasterNip(config.headmasterNip);
     }
   }, [config?.headmasterNip]);
 
   useEffect(() => {
-    if (config?.academicYear && config.academicYear !== academicYear) {
+    if (config?.academicYear !== undefined && config.academicYear !== academicYear) {
       setAcademicYear(config.academicYear);
     }
   }, [config?.academicYear]);

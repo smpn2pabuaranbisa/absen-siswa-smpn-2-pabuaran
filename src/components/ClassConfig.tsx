@@ -37,20 +37,20 @@ export default function ClassConfig({
   
   // Headmaster states
   const [headmasterName, setHeadmasterName] = useState(() => {
-    return config.headmasterName || localStorage.getItem('absensi_qr_headmaster_name') || 'Drs. H. Suherman, M.Pd';
+    return config.headmasterName || localStorage.getItem('absensi_qr_headmaster_name') || '';
   });
   const [headmasterNip, setHeadmasterNip] = useState(() => {
-    return config.headmasterNip || localStorage.getItem('absensi_qr_headmaster_nip') || '197403122005011002';
+    return config.headmasterNip || localStorage.getItem('absensi_qr_headmaster_nip') || '';
   });
   const [academicYear, setAcademicYear] = useState(() => {
-    return config.academicYear || localStorage.getItem('absensi_qr_academic_year') || 'TA. 2026/2027';
+    return config.academicYear || localStorage.getItem('absensi_qr_academic_year') || '';
   });
 
   // Keep local states in sync when global config changes
   useEffect(() => {
-    if (config.headmasterName) setHeadmasterName(config.headmasterName);
-    if (config.headmasterNip) setHeadmasterNip(config.headmasterNip);
-    if (config.academicYear) setAcademicYear(config.academicYear);
+    if (config.headmasterName !== undefined) setHeadmasterName(config.headmasterName);
+    if (config.headmasterNip !== undefined) setHeadmasterNip(config.headmasterNip);
+    if (config.academicYear !== undefined) setAcademicYear(config.academicYear);
   }, [config.headmasterName, config.headmasterNip, config.academicYear]);
   
   // Custom class list state

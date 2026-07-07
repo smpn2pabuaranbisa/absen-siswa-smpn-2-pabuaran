@@ -171,8 +171,8 @@ export default function AttendanceLogs({
       return;
     }
 
-    const hName = config?.headmasterName || localStorage.getItem('absensi_qr_headmaster_name') || 'Drs. H. Suherman, M.Pd';
-    const hNip = config?.headmasterNip || localStorage.getItem('absensi_qr_headmaster_nip') || '197403122005011002';
+    const hName = config?.headmasterName || localStorage.getItem('absensi_qr_headmaster_name') || '';
+    const hNip = config?.headmasterNip || localStorage.getItem('absensi_qr_headmaster_nip') || '';
     const sigImg = config?.signatureImage || localStorage.getItem('absensi_qr_signature_image') || '';
     const stampImg = config?.stampImage || localStorage.getItem('absensi_qr_stamp_image') || '';
 
@@ -760,14 +760,26 @@ export default function AttendanceLogs({
                               <option value="alpa">Alpa</option>
                             </select>
                           ) : (
-                            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide
-                              ${record.status === 'hadir' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : ''}
-                              ${record.status === 'sakit' ? 'bg-blue-50 text-blue-700 border border-blue-100' : ''}
-                              ${record.status === 'izin' ? 'bg-amber-50 text-amber-700 border border-amber-100' : ''}
-                              ${record.status === 'alpa' ? 'bg-rose-50 text-rose-700 border border-rose-100' : ''}
-                            `}>
-                              ● {record.status}
-                            </span>
+                            <div className="flex flex-col gap-1 items-start">
+                              <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide
+                                ${record.status === 'hadir' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : ''}
+                                ${record.status === 'sakit' ? 'bg-blue-50 text-blue-700 border border-blue-100' : ''}
+                                ${record.status === 'izin' ? 'bg-amber-50 text-amber-700 border border-amber-100' : ''}
+                                ${record.status === 'alpa' ? 'bg-rose-50 text-rose-700 border border-rose-100' : ''}
+                              `}>
+                                ● {record.status}
+                              </span>
+                              {record.type === 'pulang' && (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-indigo-50 text-indigo-600 border border-indigo-100">
+                                  PULANG
+                                </span>
+                              )}
+                              {(!record.type || record.type === 'datang') && record.status === 'hadir' && (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-teal-50 text-teal-600 border border-teal-100">
+                                  DATANG
+                                </span>
+                              )}
+                            </div>
                           )}
                         </td>
 
