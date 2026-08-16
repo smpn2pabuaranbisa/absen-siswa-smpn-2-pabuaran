@@ -5,6 +5,13 @@ import {
   Trash2, Plus, Download, Upload, RefreshCw, Check, 
   Settings, Layers, BookOpen, AlertCircle
 } from 'lucide-react';
+import { 
+  safeLocalStorageSet, 
+  safeLocalStorageGet, 
+  safeLocalStorageRemove, 
+  compressImage 
+} from '../lib/storage';
+
 
 interface ClassConfigProps {
   config: AttendanceConfig;
@@ -37,13 +44,13 @@ export default function ClassConfig({
   
   // Headmaster states
   const [headmasterName, setHeadmasterName] = useState(() => {
-    return config.headmasterName || localStorage.getItem('absensi_qr_headmaster_name') || '';
+    return config.headmasterName || safeLocalStorageGet('absensi_qr_headmaster_name') || '';
   });
   const [headmasterNip, setHeadmasterNip] = useState(() => {
-    return config.headmasterNip || localStorage.getItem('absensi_qr_headmaster_nip') || '';
+    return config.headmasterNip || safeLocalStorageGet('absensi_qr_headmaster_nip') || '';
   });
   const [academicYear, setAcademicYear] = useState(() => {
-    return config.academicYear || localStorage.getItem('absensi_qr_academic_year') || '';
+    return config.academicYear || safeLocalStorageGet('absensi_qr_academic_year') || '';
   });
 
   // Keep local states in sync when global config changes
@@ -94,9 +101,9 @@ export default function ClassConfig({
       academicYear: academicYear.trim(),
     });
     
-    localStorage.setItem('absensi_qr_headmaster_name', headmasterName.trim());
-    localStorage.setItem('absensi_qr_headmaster_nip', headmasterNip.trim());
-    localStorage.setItem('absensi_qr_academic_year', academicYear.trim());
+    safeLocalStorageSet('absensi_qr_headmaster_name', headmasterName.trim());
+    safeLocalStorageSet('absensi_qr_headmaster_nip', headmasterNip.trim());
+    safeLocalStorageSet('absensi_qr_academic_year', academicYear.trim());
     
     setIsSavedAlert(true);
     setTimeout(() => setIsSavedAlert(false), 3000);
@@ -122,21 +129,16 @@ export default function ClassConfig({
     setNewClassName('');
   };
 
-  const handleLogoUpload = (e: ChangeEvent<HTMLInputElement>) => {
+  const handleLogoUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Check size limit (e.g., max 500KB to prevent Firestore/LocalStorage bloating)
-    if (file.size > 500 * 1024) {
-      setAlertMessage('Ukuran logo terlalu besar. Maksimal 500KB.');
-      return;
+    try {
+      const compressed = await compressImage(file, 400, 400, 0.85);
+      setLogoUrl(compressed);
+    } catch (err) {
+      console.error('Failed to compress logo:', err);
     }
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      setLogoUrl(event.target?.result as string);
-    };
-    reader.readAsDataURL(file);
   };
 
   const handleDeleteClass = (classNameToDelete: string) => {
@@ -159,8 +161,8 @@ export default function ClassConfig({
   const handleExportBackup = () => {
     const teachers: Record<string, { name: string; nip: string }> = {};
     uniqueClasses.forEach(className => {
-      const name = localStorage.getItem(`absensi_qr_teacher_name_${className}`);
-      const nip = localStorage.getItem(`absensi_qr_teacher_nip_${className}`);
+      const name = safeLocalStorageGet(`absensi_qr_teacher_name_${className}`);
+      const nip = safeLocalStorageGet(`absensi_qr_teacher_nip_${className}`);
       if (name || nip) {
         teachers[className] = { name: name || '', nip: nip || '' };
       }
@@ -170,12 +172,12 @@ export default function ClassConfig({
       students,
       records,
       config,
-      signatureImage: localStorage.getItem('absensi_qr_signature_image'),
-      stampImage: localStorage.getItem('absensi_qr_stamp_image'),
-      idCardConfig: localStorage.getItem('absensi_qr_idcard_config'),
-      headmasterName: localStorage.getItem('absensi_qr_headmaster_name'),
-      headmasterNip: localStorage.getItem('absensi_qr_headmaster_nip'),
-      academicYear: localStorage.getItem('absensi_qr_academic_year'),
+      signatureImage: safeLocalStorageGet('absensi_qr_signature_image'),
+      stampImage: safeLocalStorageGet('absensi_qr_stamp_image'),
+      idCardConfig: safeLocalStorageGet('absensi_qr_idcard_config'),
+      headmasterName: safeLocalStorageGet('absensi_qr_headmaster_name'),
+      headmasterNip: safeLocalStorageGet('absensi_qr_headmaster_nip'),
+      academicYear: safeLocalStorageGet('absensi_qr_academic_year'),
       teachers,
       exportedAt: new Date().toISOString()
     };
@@ -219,35 +221,35 @@ export default function ClassConfig({
     onRestoreDatabase(data.students, data.records, data.config);
     
     // Restore visual assets (Tanda Tangan & Stempel)
-    if (data.signatureImage) localStorage.setItem('absensi_qr_signature_image', data.signatureImage);
-    else localStorage.removeItem('absensi_qr_signature_image');
+    if (data.signatureImage) safeLocalStorageSet('absensi_qr_signature_image', data.signatureImage);
+    else safeLocalStorageRemove('absensi_qr_signature_image');
     
-    if (data.stampImage) localStorage.setItem('absensi_qr_stamp_image', data.stampImage);
-    else localStorage.removeItem('absensi_qr_stamp_image');
+    if (data.stampImage) safeLocalStorageSet('absensi_qr_stamp_image', data.stampImage);
+    else safeLocalStorageRemove('absensi_qr_stamp_image');
     
-    if (data.idCardConfig) localStorage.setItem('absensi_qr_idcard_config', data.idCardConfig);
-    else localStorage.removeItem('absensi_qr_idcard_config');
+    if (data.idCardConfig) safeLocalStorageSet('absensi_qr_idcard_config', data.idCardConfig);
+    else safeLocalStorageRemove('absensi_qr_idcard_config');
 
     if (data.headmasterName) {
-      localStorage.setItem('absensi_qr_headmaster_name', data.headmasterName);
+      safeLocalStorageSet('absensi_qr_headmaster_name', data.headmasterName);
       setHeadmasterName(data.headmasterName);
     }
     if (data.headmasterNip) {
-      localStorage.setItem('absensi_qr_headmaster_nip', data.headmasterNip);
+      safeLocalStorageSet('absensi_qr_headmaster_nip', data.headmasterNip);
       setHeadmasterNip(data.headmasterNip);
     }
     if (data.academicYear) {
-      localStorage.setItem('absensi_qr_academic_year', data.academicYear);
+      safeLocalStorageSet('absensi_qr_academic_year', data.academicYear);
       setAcademicYear(data.academicYear);
     }
 
     if (data.teachers) {
       Object.entries(data.teachers).forEach(([className, val]: [string, any]) => {
-        if (val.name) localStorage.setItem(`absensi_qr_teacher_name_${className}`, val.name);
-        else localStorage.removeItem(`absensi_qr_teacher_name_${className}`);
+        if (val.name) safeLocalStorageSet(`absensi_qr_teacher_name_${className}`, val.name);
+        else safeLocalStorageRemove(`absensi_qr_teacher_name_${className}`);
         
-        if (val.nip) localStorage.setItem(`absensi_qr_teacher_nip_${className}`, val.nip);
-        else localStorage.removeItem(`absensi_qr_teacher_nip_${className}`);
+        if (val.nip) safeLocalStorageSet(`absensi_qr_teacher_nip_${className}`, val.nip);
+        else safeLocalStorageRemove(`absensi_qr_teacher_nip_${className}`);
       });
     }
 
@@ -842,15 +844,15 @@ export default function ClassConfig({
                   });
 
                   if (editingTeacherName.trim()) {
-                    localStorage.setItem(`absensi_qr_teacher_name_${editingClassTeacher}`, editingTeacherName.trim());
+                    safeLocalStorageSet(`absensi_qr_teacher_name_${editingClassTeacher}`, editingTeacherName.trim());
                   } else {
-                    localStorage.removeItem(`absensi_qr_teacher_name_${editingClassTeacher}`);
+                    safeLocalStorageRemove(`absensi_qr_teacher_name_${editingClassTeacher}`);
                   }
 
                   if (editingTeacherNip.trim()) {
-                    localStorage.setItem(`absensi_qr_teacher_nip_${editingClassTeacher}`, editingTeacherNip.trim());
+                    safeLocalStorageSet(`absensi_qr_teacher_nip_${editingClassTeacher}`, editingTeacherNip.trim());
                   } else {
-                    localStorage.removeItem(`absensi_qr_teacher_nip_${editingClassTeacher}`);
+                    safeLocalStorageRemove(`absensi_qr_teacher_nip_${editingClassTeacher}`);
                   }
 
                   setEditingClassTeacher(null);

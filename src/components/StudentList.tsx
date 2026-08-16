@@ -7,6 +7,13 @@ import {
   Users, Check, ArrowRight, BookOpen, UserCheck, AlertCircle,
   CreditCard, ShieldCheck, Award, Layers
 } from 'lucide-react';
+import { 
+  safeLocalStorageSet, 
+  safeLocalStorageGet, 
+  safeLocalStorageRemove, 
+  compressImage 
+} from '../lib/storage';
+
 
 // Simple and high-fidelity Code 39 barcode SVG generator for offline rendering
 const CODE39_MAP: Record<string, string> = {
@@ -136,28 +143,29 @@ export default function StudentList({
   const [idCardTheme, setIdCardTheme] = useState<'navy' | 'crimson' | 'emerald' | 'gold'>('navy');
   const [idCardLayout, setIdCardLayout] = useState<'portrait' | 'landscape'>('portrait');
   const [includeBackCard, setIncludeBackCard] = useState(true);
-  const [codeType, setCodeType] = useState<'qr' | 'barcode'>(() => (localStorage.getItem('absensi_code_type') as any) || 'qr');
+  const [codeType, setCodeType] = useState<'qr' | 'barcode'>(() => (safeLocalStorageGet('absensi_code_type') as any) || 'qr');
 
   useEffect(() => {
-    localStorage.setItem('absensi_code_type', codeType);
+    safeLocalStorageSet('absensi_code_type', codeType);
   }, [codeType]);
 
   // ID Card Customization Details
   const [headmasterName, setHeadmasterName] = useState(() => {
-    return config?.headmasterName || localStorage.getItem('absensi_qr_headmaster_name') || '';
+    return config?.headmasterName || safeLocalStorageGet('absensi_qr_headmaster_name') || '';
   });
   const [headmasterNip, setHeadmasterNip] = useState(() => {
-    return config?.headmasterNip || localStorage.getItem('absensi_qr_headmaster_nip') || '';
+    return config?.headmasterNip || safeLocalStorageGet('absensi_qr_headmaster_nip') || '';
   });
   const [academicYear, setAcademicYear] = useState(() => {
-    return config?.academicYear || localStorage.getItem('absensi_qr_academic_year') || '';
+    return config?.academicYear || safeLocalStorageGet('absensi_qr_academic_year') || '';
   });
   const [signatureImage, setSignatureImage] = useState<string | null>(() => {
-    return config?.signatureImage || localStorage.getItem('absensi_qr_signature_image') || null;
+    return config?.signatureImage || safeLocalStorageGet('absensi_qr_signature_image') || null;
   });
   const [stampImage, setStampImage] = useState<string | null>(() => {
-    return config?.stampImage || localStorage.getItem('absensi_qr_stamp_image') || null;
+    return config?.stampImage || safeLocalStorageGet('absensi_qr_stamp_image') || null;
   });
+
 
   // Advanced ID Card Configuration
   const [idCardConfig, setIdCardConfig] = useState(() => {
@@ -245,50 +253,44 @@ export default function StudentList({
 
   // Keep saved configuration persistent in localStorage
   useEffect(() => {
-    localStorage.setItem('absensi_qr_headmaster_name', headmasterName);
+    safeLocalStorageSet('absensi_qr_headmaster_name', headmasterName);
   }, [headmasterName]);
 
   useEffect(() => {
-    localStorage.setItem('absensi_qr_headmaster_nip', headmasterNip);
+    safeLocalStorageSet('absensi_qr_headmaster_nip', headmasterNip);
   }, [headmasterNip]);
 
   useEffect(() => {
-    localStorage.setItem('absensi_qr_academic_year', academicYear);
+    safeLocalStorageSet('absensi_qr_academic_year', academicYear);
   }, [academicYear]);
 
   useEffect(() => {
-    localStorage.setItem('absensi_qr_idcard_config', JSON.stringify(idCardConfig));
+    safeLocalStorageSet('absensi_qr_idcard_config', JSON.stringify(idCardConfig));
   }, [idCardConfig]);
 
   useEffect(() => {
     if (signatureImage) {
-      localStorage.setItem('absensi_qr_signature_image', signatureImage);
+      safeLocalStorageSet('absensi_qr_signature_image', signatureImage);
     } else {
-      localStorage.removeItem('absensi_qr_signature_image');
+      safeLocalStorageRemove('absensi_qr_signature_image');
     }
   }, [signatureImage]);
 
   useEffect(() => {
     if (stampImage) {
-      localStorage.setItem('absensi_qr_stamp_image', stampImage);
+      safeLocalStorageSet('absensi_qr_stamp_image', stampImage);
     } else {
-      localStorage.removeItem('absensi_qr_stamp_image');
+      safeLocalStorageRemove('absensi_qr_stamp_image');
     }
   }, [stampImage]);
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, type: 'signature' | 'stamp' | 'bgFront' | 'bgBack') => {
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'signature' | 'stamp' | 'bgFront' | 'bgBack') => {
     const file = e.target.files?.[0];
     if (!file) return;
     
-    // Check file size limit (limit to 1.5MB to avoid localStorage quota issues)
-    if (file.size > 1.5 * 1024 * 1024) {
-      alert('Ukuran gambar terlalu besar! Silakan gunakan gambar di bawah 1.5MB agar dapat disimpan.');
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const base64String = reader.result as string;
+    try {
+      // Automatically downscale and compress images to keep storage footprint negligible
+      const base64String = await compressImage(file, 600, 600, 0.85);
       if (type === 'signature') {
         setSignatureImage(base64String);
       } else if (type === 'stamp') {
@@ -298,8 +300,9 @@ export default function StudentList({
       } else if (type === 'bgBack') {
         setIdCardConfig(prev => ({ ...prev, bgBack: base64String }));
       }
-    };
-    reader.readAsDataURL(file);
+    } catch (err) {
+      console.error('Failed to compress image:', err);
+    }
   };
 
   const updateIdCardConfig = (key: keyof typeof idCardConfig, value: any) => {
@@ -2067,18 +2070,15 @@ export default function StudentList({
                     <input
                       type="file"
                       accept="image/*"
-                      onChange={(e) => {
+                      onChange={async (e) => {
                         const file = e.target.files?.[0];
                         if (file) {
-                          if (file.size > 1.5 * 1024 * 1024) {
-                            alert('Ukuran foto terlalu besar! Gunakan foto di bawah 1.5MB agar dapat disimpan.');
-                            return;
+                          try {
+                            const compressed = await compressImage(file, 480, 480, 0.85);
+                            setFormData({ ...formData, photo: compressed });
+                          } catch (err) {
+                            console.error('Failed to process photo:', err);
                           }
-                          const reader = new FileReader();
-                          reader.onloadend = () => {
-                            setFormData({ ...formData, photo: reader.result as string });
-                          };
-                          reader.readAsDataURL(file);
                         }
                       }}
                       className="hidden"

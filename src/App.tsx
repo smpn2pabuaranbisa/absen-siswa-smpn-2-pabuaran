@@ -34,6 +34,18 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { db } from "./lib/firebase";
+import {
+  saveStudentsLocal,
+  loadStudentsLocal,
+  saveRecordsLocal,
+  loadRecordsLocal,
+  saveConfigLocal,
+  loadConfigLocal,
+  saveEventsLocal,
+  loadEventsLocal,
+  safeLocalStorageGet,
+  safeLocalStorageSet,
+} from "./lib/storage";
 
 // Icons
 import {
@@ -81,64 +93,51 @@ export default function App() {
 
   // 1. Initial Seeding and Real-Time Firebase Synchronizer
   useEffect(() => {
-    // A. Synchronously load offline localStorage fallback first for instant responsive rendering
-    const storedConfig = localStorage.getItem("absensi_qr_config");
-    if (storedConfig) {
+    // A. Asynchronously load local offline storage first for instant responsive rendering
+    const loadInitialLocalData = async () => {
       try {
-        setConfig(JSON.parse(storedConfig));
-      } catch (e) {
-        console.error("Failed to parse config");
+        const storedConfig = await loadConfigLocal();
+        if (storedConfig) {
+          setConfig(storedConfig);
+        }
+
+        const storedStudents = await loadStudentsLocal();
+        if (storedStudents && storedStudents.length > 0) {
+          setStudents(storedStudents);
+        } else {
+          setStudents(INITIAL_STUDENTS);
+          saveStudentsLocal(INITIAL_STUDENTS);
+        }
+
+        const storedRecords = await loadRecordsLocal();
+        if (storedRecords && storedRecords.length > 0) {
+          setRecords(storedRecords);
+        } else {
+          const initialRecords = generateMockAttendance();
+          setRecords(initialRecords);
+          saveRecordsLocal(initialRecords);
+        }
+
+        const storedEvents = await loadEventsLocal();
+        if (storedEvents) {
+          setEvents(storedEvents);
+        } else {
+          setEvents([]);
+          saveEventsLocal([]);
+        }
+      } catch (err) {
+        console.warn("Local storage loading warning:", err);
       }
-    }
-    const storedStudents = localStorage.getItem("absensi_qr_students");
-    if (storedStudents) {
-      try {
-        setStudents(JSON.parse(storedStudents));
-      } catch (e) {
-        console.error("Failed to parse students");
-      }
-    } else {
-      setStudents(INITIAL_STUDENTS);
-      localStorage.setItem(
-        "absensi_qr_students",
-        JSON.stringify(INITIAL_STUDENTS),
-      );
-    }
-    const storedRecords = localStorage.getItem("absensi_qr_records");
-    if (storedRecords) {
-      try {
-        setRecords(JSON.parse(storedRecords));
-      } catch (e) {
-        console.error("Failed to parse records");
-      }
-    } else {
-      const initialRecords = generateMockAttendance();
-      setRecords(initialRecords);
-      localStorage.setItem(
-        "absensi_qr_records",
-        JSON.stringify(initialRecords),
-      );
-    }
-    const storedEvents = localStorage.getItem("absensi_qr_events");
-    if (storedEvents) {
-      try {
-        setEvents(JSON.parse(storedEvents));
-      } catch (e) {
-        console.error("Failed to parse events");
-      }
-    } else {
-      setEvents([]);
-      localStorage.setItem("absensi_qr_events", JSON.stringify([]));
-    }
+    };
+
+    loadInitialLocalData();
 
     // B. Ensure config exists in cloud
     const checkAndSeedCloudDatabase = async () => {
       try {
         const cfgSnap = await getDoc(doc(db, "config", "global_config"));
         if (!cfgSnap.exists()) {
-          const curConfig = localStorage.getItem("absensi_qr_config")
-            ? JSON.parse(localStorage.getItem("absensi_qr_config")!)
-            : INITIAL_CONFIG;
+          const curConfig = (await loadConfigLocal()) || INITIAL_CONFIG;
           await setDoc(doc(db, "config", "global_config"), curConfig);
           console.log("Cloud config initialized.");
         }
@@ -161,7 +160,7 @@ export default function App() {
           list.push(d.data() as Student);
         });
         setStudents(list);
-        localStorage.setItem("absensi_qr_students", JSON.stringify(list));
+        saveStudentsLocal(list);
       },
       (err) => console.error("Error listening to students:", err),
     );
@@ -179,7 +178,7 @@ export default function App() {
             new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
         );
         setRecords(list);
-        localStorage.setItem("absensi_qr_records", JSON.stringify(list));
+        saveRecordsLocal(list);
       },
       (err) => console.error("Error listening to records:", err),
     );
@@ -192,7 +191,7 @@ export default function App() {
           list.push(d.data() as CalendarEvent);
         });
         setEvents(list);
-        localStorage.setItem("absensi_qr_events", JSON.stringify(list));
+        saveEventsLocal(list);
       },
       (err) => console.error("Error listening to events:", err),
     );
@@ -205,7 +204,7 @@ export default function App() {
         if (snap.exists()) {
           const cfg = snap.data() as AttendanceConfig;
           setConfig(cfg);
-          localStorage.setItem("absensi_qr_config", JSON.stringify(cfg));
+          saveConfigLocal(cfg);
         }
         configLoaded = true;
         setIsLoadingConfig(false);
@@ -222,7 +221,7 @@ export default function App() {
         if (snap.exists()) {
           const cfg = snap.data() as AttendanceConfig;
           setConfig(cfg);
-          localStorage.setItem("absensi_qr_config", JSON.stringify(cfg));
+          saveConfigLocal(cfg);
         }
         if (!configLoaded && !snap.metadata.fromCache) {
           setIsLoadingConfig(false);
@@ -280,20 +279,17 @@ export default function App() {
   // 4. Persistence Handlers (Writes locally and coordinates with Firestore)
   const persistStudents = async (updatedStudents: Student[]) => {
     setStudents(updatedStudents);
-    localStorage.setItem(
-      "absensi_qr_students",
-      JSON.stringify(updatedStudents),
-    );
+    await saveStudentsLocal(updatedStudents);
   };
 
   const persistRecords = async (updatedRecords: AttendanceRecord[]) => {
     setRecords(updatedRecords);
-    localStorage.setItem("absensi_qr_records", JSON.stringify(updatedRecords));
+    await saveRecordsLocal(updatedRecords);
   };
 
   const persistConfig = async (updatedConfig: AttendanceConfig) => {
     setConfig(updatedConfig);
-    localStorage.setItem("absensi_qr_config", JSON.stringify(updatedConfig));
+    await saveConfigLocal(updatedConfig);
     try {
       await setDoc(doc(db, "config", "global_config"), updatedConfig);
     } catch (err) {
@@ -303,7 +299,7 @@ export default function App() {
 
   const persistEvents = async (updatedEvents: CalendarEvent[]) => {
     setEvents(updatedEvents);
-    localStorage.setItem("absensi_qr_events", JSON.stringify(updatedEvents));
+    await saveEventsLocal(updatedEvents);
     try {
       const batch = writeBatch(db);
       // Clean old events
