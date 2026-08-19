@@ -294,6 +294,9 @@ export function compressImage(
         }
       }
 
+      const isPng = (typeof fileOrDataUrl !== 'string' && fileOrDataUrl.type === 'image/png') ||
+                    (typeof fileOrDataUrl === 'string' && fileOrDataUrl.startsWith('data:image/png'));
+
       const canvas = document.createElement('canvas');
       canvas.width = width;
       canvas.height = height;
@@ -304,7 +307,8 @@ export function compressImage(
       }
 
       ctx.drawImage(img, 0, 0, width, height);
-      const resultDataUrl = canvas.toDataURL('image/jpeg', quality);
+      const outputType = isPng ? 'image/png' : 'image/jpeg';
+      const resultDataUrl = canvas.toDataURL(outputType, quality);
       resolve(resultDataUrl);
     };
 

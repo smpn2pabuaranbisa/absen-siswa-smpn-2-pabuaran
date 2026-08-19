@@ -52,13 +52,21 @@ export default function ClassConfig({
   const [academicYear, setAcademicYear] = useState(() => {
     return config.academicYear || safeLocalStorageGet('absensi_qr_academic_year') || '';
   });
+  const [signatureImage, setSignatureImage] = useState<string | null>(() => {
+    return config.signatureImage || safeLocalStorageGet('absensi_qr_signature_image') || null;
+  });
+  const [stampImage, setStampImage] = useState<string | null>(() => {
+    return config.stampImage || safeLocalStorageGet('absensi_qr_stamp_image') || null;
+  });
 
   // Keep local states in sync when global config changes
   useEffect(() => {
     if (config.headmasterName !== undefined) setHeadmasterName(config.headmasterName);
     if (config.headmasterNip !== undefined) setHeadmasterNip(config.headmasterNip);
     if (config.academicYear !== undefined) setAcademicYear(config.academicYear);
-  }, [config.headmasterName, config.headmasterNip, config.academicYear]);
+    if (config.signatureImage !== undefined) setSignatureImage(config.signatureImage || null);
+    if (config.stampImage !== undefined) setStampImage(config.stampImage || null);
+  }, [config.headmasterName, config.headmasterNip, config.academicYear, config.signatureImage, config.stampImage]);
   
   // Custom class list state
   const [newClassName, setNewClassName] = useState('');
@@ -99,11 +107,25 @@ export default function ClassConfig({
       headmasterName: headmasterName.trim(),
       headmasterNip: headmasterNip.trim(),
       academicYear: academicYear.trim(),
+      signatureImage: signatureImage || undefined,
+      stampImage: stampImage || undefined,
     });
     
     safeLocalStorageSet('absensi_qr_headmaster_name', headmasterName.trim());
     safeLocalStorageSet('absensi_qr_headmaster_nip', headmasterNip.trim());
     safeLocalStorageSet('absensi_qr_academic_year', academicYear.trim());
+
+    if (signatureImage) {
+      safeLocalStorageSet('absensi_qr_signature_image', signatureImage);
+    } else {
+      safeLocalStorageRemove('absensi_qr_signature_image');
+    }
+
+    if (stampImage) {
+      safeLocalStorageSet('absensi_qr_stamp_image', stampImage);
+    } else {
+      safeLocalStorageRemove('absensi_qr_stamp_image');
+    }
     
     setIsSavedAlert(true);
     setTimeout(() => setIsSavedAlert(false), 3000);
@@ -138,6 +160,30 @@ export default function ClassConfig({
       setLogoUrl(compressed);
     } catch (err) {
       console.error('Failed to compress logo:', err);
+    }
+  };
+
+  const handleSignatureUpload = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const compressed = await compressImage(file, 600, 600, 0.85);
+      setSignatureImage(compressed);
+    } catch (err) {
+      console.error('Failed to compress signature:', err);
+    }
+  };
+
+  const handleStampUpload = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const compressed = await compressImage(file, 600, 600, 0.85);
+      setStampImage(compressed);
+    } catch (err) {
+      console.error('Failed to compress stamp:', err);
     }
   };
 
@@ -344,6 +390,7 @@ export default function ClassConfig({
                     type="button" 
                     onClick={() => setLogoUrl('')}
                     className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity"
+                    title="Hapus Logo"
                   >
                     <Trash2 className="h-5 w-5 text-white" />
                   </button>
@@ -361,6 +408,83 @@ export default function ClassConfig({
                   className="block w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-purple-50 file:text-purple-700 hover:file:bg-purple-100 transition-all cursor-pointer"
                 />
                 <p className="text-[10px] text-gray-400 mt-1">Format: JPG, PNG, WEBP. Maks 500KB.</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Tanda Tangan & Stempel Resmi Sekolah (Pengesahan Dokumen & ID Card) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-purple-50/50 border border-purple-100 rounded-2xl">
+            {/* Tanda Tangan Kepala Sekolah */}
+            <div>
+              <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                <span className="text-purple-600 font-bold">✍️</span> Tanda Tangan Kepala Sekolah
+              </label>
+              <p className="text-[11px] text-gray-500 mb-2">Otomatis dicetak pada ID Card dan Lembar Pengesahan Laporan.</p>
+              <div className="flex items-center gap-3">
+                {signatureImage ? (
+                  <div className="relative h-16 w-24 rounded-xl border border-purple-200 bg-white flex items-center justify-center overflow-hidden flex-shrink-0 shadow-sm">
+                    <img src={signatureImage} alt="Tanda Tangan" className="max-h-full max-w-full object-contain p-1" />
+                    <button 
+                      type="button" 
+                      onClick={() => setSignatureImage(null)}
+                      className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity"
+                      title="Hapus Tanda Tangan"
+                    >
+                      <Trash2 className="h-4 w-4 text-white" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="h-16 w-24 rounded-xl border-2 border-dashed border-purple-200 bg-white/70 flex flex-col items-center justify-center text-purple-400 flex-shrink-0">
+                    <span className="text-base">✍️</span>
+                    <span className="text-[9px] font-semibold">Kosong</span>
+                  </div>
+                )}
+                <div className="flex-1">
+                  <input
+                    type="file"
+                    accept="image/png, image/jpeg, image/webp"
+                    onChange={handleSignatureUpload}
+                    className="block w-full text-xs text-gray-500 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-purple-100 file:text-purple-800 hover:file:bg-purple-200 transition-all cursor-pointer"
+                  />
+                  <p className="text-[10px] text-gray-400 mt-1">Disarankan gambar PNG transparan.</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Stempel Sekolah */}
+            <div>
+              <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                <span className="text-purple-600 font-bold">💮</span> Stempel Resmi Sekolah
+              </label>
+              <p className="text-[11px] text-gray-500 mb-2">Otomatis disandingkan dengan tanda tangan pada kartu & rekap.</p>
+              <div className="flex items-center gap-3">
+                {stampImage ? (
+                  <div className="relative h-16 w-24 rounded-xl border border-purple-200 bg-white flex items-center justify-center overflow-hidden flex-shrink-0 shadow-sm">
+                    <img src={stampImage} alt="Stempel" className="max-h-full max-w-full object-contain p-1" />
+                    <button 
+                      type="button" 
+                      onClick={() => setStampImage(null)}
+                      className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity"
+                      title="Hapus Stempel"
+                    >
+                      <Trash2 className="h-4 w-4 text-white" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="h-16 w-24 rounded-xl border-2 border-dashed border-purple-200 bg-white/70 flex flex-col items-center justify-center text-purple-400 flex-shrink-0">
+                    <span className="text-base">💮</span>
+                    <span className="text-[9px] font-semibold">Kosong</span>
+                  </div>
+                )}
+                <div className="flex-1">
+                  <input
+                    type="file"
+                    accept="image/png, image/jpeg, image/webp"
+                    onChange={handleStampUpload}
+                    className="block w-full text-xs text-gray-500 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-purple-100 file:text-purple-800 hover:file:bg-purple-200 transition-all cursor-pointer"
+                  />
+                  <p className="text-[10px] text-gray-400 mt-1">Disarankan gambar PNG transparan.</p>
+                </div>
               </div>
             </div>
           </div>

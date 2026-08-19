@@ -652,7 +652,7 @@ export default function StudentList({
 
       const signatureSvg = idCardConfig.visibility.signature ? (
         signatureImage ? `
-        <image href="${signatureImage}" x="15" y="2" width="70" height="36" preserveAspectRatio="xMidYMid meet" style="opacity: 0.95;"/>
+        <img src="${signatureImage}" style="position: absolute; left: 50%; transform: translateX(-50%); top: -12px; max-height: 28px; max-width: 60px; object-fit: contain; z-index: 10;" alt="Tanda Tangan" />
       ` : `
         <svg viewBox="0 0 100 40" class="sig-path" style="width:70px; height:28px; opacity: 0.85;">
           <path d="M10 25 C 18 12, 28 8, 38 18 C 45 25, 42 6, 52 14 C 60 22, 68 25, 82 18 C 88 16, 76 32, 92 25" fill="none" stroke="${strokeColor}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -661,7 +661,7 @@ export default function StudentList({
 
       const stampSvg = idCardConfig.visibility.signature ? (
         stampImage ? `
-        <image href="${stampImage}" x="30" y="5" width="55" height="55" preserveAspectRatio="xMidYMid meet" class="stamp-svg" style="width: 52px; height: 52px; position: absolute; left: 50%; transform: translateX(-35%) rotate(-15deg); bottom: -6px; opacity: 0.65; pointer-events: none;"/>
+        <img src="${stampImage}" style="width: 26px; height: 26px; object-fit: contain; position: absolute; left: 50%; transform: translateX(5px) rotate(-15deg); top: -10px; opacity: 0.65; pointer-events: none; z-index: 20;" alt="Stempel" />
       ` : `
         <svg viewBox="0 0 100 100" class="stamp-svg" style="width: 52px; height: 52px; position: absolute; left: 50%; transform: translateX(-35%) rotate(-15deg); bottom: -6px; opacity: 0.28; pointer-events: none; color: ${strokeColor};">
           <circle cx="50" cy="50" r="44" fill="none" stroke="currentColor" stroke-width="1.8" stroke-dasharray="3 1.5"/>
@@ -1296,11 +1296,12 @@ export default function StudentList({
 
             .signature-display {
               width: 100%;
-              height: 0.7cm;
+              height: 0.5cm;
               position: relative;
               display: flex;
               justify-content: center;
               align-items: center;
+              margin-bottom: 2px;
             }
 
             .sig-path {
@@ -1314,6 +1315,7 @@ export default function StudentList({
               color: #111827;
               text-decoration: underline;
               text-align: center;
+              margin-top: -3px;
             }
 
             /* PORTRAIT BACK CARD STYLING */
@@ -2845,7 +2847,7 @@ export default function StudentList({
                             <span className="text-[4.5px] font-bold text-gray-400 leading-none mt-1">Kepala Sekolah,</span>
                             
                             {idCardConfig.visibility.signature && (
-                              <div className="relative w-full h-[24px] flex justify-center items-center">
+                              <div className="relative w-full h-[22px] flex justify-center items-center">
                                 {signatureImage ? (
                                   <img src={signatureImage} className="h-full max-w-[60px] object-contain z-10 absolute" alt="Tanda Tangan" />
                                 ) : (
@@ -2863,7 +2865,7 @@ export default function StudentList({
                                 )}
                               </div>
                             )}
-                            <span className="text-[5px] font-black text-gray-800 underline leading-none mb-1 mt-auto">{idCardConfig.visibility.signature ? headmasterName : ''}</span>
+                            <span className="text-[5px] font-black text-gray-800 underline leading-none mb-1 z-20" style={{ marginTop: '-1.5px' }}>{idCardConfig.visibility.signature ? headmasterName : ''}</span>
                           </div>
                         </div>
                       ) : (
@@ -2932,7 +2934,7 @@ export default function StudentList({
                               {idCardConfig.visibility.signature && (
                                 <div className="flex flex-col items-end leading-none">
                                   <span className="text-[4.5px] font-bold text-gray-400 mb-0.5">Kepala Sekolah,</span>
-                                  <div className="relative w-[70px] h-[16px] flex justify-end items-center">
+                                  <div className="relative w-[70px] h-[16px] flex justify-end items-center mb-0.5">
                                     {signatureImage ? (
                                       <img src={signatureImage} className="h-[22px] max-w-[50px] object-contain z-10 absolute right-1" alt="Tanda Tangan" />
                                     ) : (
@@ -2944,7 +2946,7 @@ export default function StudentList({
                                       <img src={stampImage} className="absolute h-[24px] w-[24px] object-contain opacity-65 pointer-events-none right-4 z-20" alt="Stempel" />
                                     ) : null}
                                   </div>
-                                  <span className="text-[5px] font-black text-gray-800 underline">{headmasterName}</span>
+                                  <span className="text-[5px] font-black text-gray-800 underline z-20" style={{ marginTop: '-2px' }}>{headmasterName}</span>
                                 </div>
                               )}
                             </div>
