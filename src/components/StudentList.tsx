@@ -661,7 +661,7 @@ export default function StudentList({
 
       const stampSvg = idCardConfig.visibility.signature ? (
         stampImage ? `
-        <img src="${stampImage}" style="width: 26px; height: 26px; object-fit: contain; position: absolute; left: 50%; transform: translateX(5px) rotate(-15deg); top: -10px; opacity: 0.65; pointer-events: none; z-index: 20;" alt="Stempel" />
+        <img src="${stampImage}" style="width: 26px; height: 26px; object-fit: contain; position: absolute; left: 50%; transform: translateX(-28px) rotate(-15deg); top: -10px; opacity: 0.65; pointer-events: none; z-index: 20;" alt="Stempel" />
       ` : `
         <svg viewBox="0 0 100 100" class="stamp-svg" style="width: 52px; height: 52px; position: absolute; left: 50%; transform: translateX(-35%) rotate(-15deg); bottom: -6px; opacity: 0.28; pointer-events: none; color: ${strokeColor};">
           <circle cx="50" cy="50" r="44" fill="none" stroke="currentColor" stroke-width="1.8" stroke-dasharray="3 1.5"/>
@@ -2857,7 +2857,7 @@ export default function StudentList({
                                   </svg>
                                 )}
                                 {stampImage ? (
-                                  <img src={stampImage} className="absolute h-[32px] w-[32px] object-contain opacity-65 pointer-events-none translate-x-3 z-20" alt="Stempel" />
+                                  <img src={stampImage} className="absolute h-[32px] w-[32px] object-contain opacity-65 pointer-events-none -translate-x-6 z-20" alt="Stempel" />
                                 ) : (
                                   <div className="absolute opacity-30 scale-60" style={{ color: idCardTheme === 'navy' ? '#2563eb' : idCardTheme === 'crimson' ? '#be123c' : idCardTheme === 'emerald' ? '#047857' : '#b45309' }}>
                                     <ShieldCheck className="h-8 w-8" />
@@ -2943,7 +2943,7 @@ export default function StudentList({
                                       </svg>
                                     )}
                                     {stampImage ? (
-                                      <img src={stampImage} className="absolute h-[24px] w-[24px] object-contain opacity-65 pointer-events-none right-4 z-20" alt="Stempel" />
+                                      <img src={stampImage} className="absolute h-[24px] w-[24px] object-contain opacity-65 pointer-events-none right-11 z-20" alt="Stempel" />
                                     ) : null}
                                   </div>
                                   <span className="text-[5px] font-black text-gray-800 underline z-20" style={{ marginTop: '-2px' }}>{headmasterName}</span>
