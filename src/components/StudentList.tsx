@@ -545,7 +545,7 @@ export default function StudentList({
       return `
         <div class="qr-card">
           <h3>${s.name}</h3>
-          <p class="meta">NIS: ${s.nis} | Kelas: ${s.className}</p>
+          <p class="meta">NISN: ${s.nis} | Kelas: ${s.className}</p>
           <div class="qr-placeholder" id="qr-${s.id}"></div>
           <p class="footer">PINDAI UNTUK ABSEN</p>
         </div>
@@ -682,7 +682,7 @@ export default function StudentList({
         <img src="${idCardConfig.bgBack}" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; opacity: 0.15;" />
       ` : '';
 
-      const nisHtml = idCardConfig.visibility.nis ? `<div class="student-nis-display">NIS: ${s.nis}</div>` : '';
+      const nisHtml = idCardConfig.visibility.nis ? `<div class="student-nis-display">NISN: ${s.nis}</div>` : '';
       const barcodeHtmlPortrait = idCardConfig.visibility.barcode ? `
         <!-- Linear Barcode Container -->
         <div class="barcode-container" style="z-index: 10;">
@@ -691,7 +691,7 @@ export default function StudentList({
         </div>
       ` : '';
 
-      const nisHtmlLandscape = idCardConfig.visibility.nis ? `<div class="student-nis-display" style="font-size: 7px;">NIS: ${s.nis}</div>` : '';
+      const nisHtmlLandscape = idCardConfig.visibility.nis ? `<div class="student-nis-display" style="font-size: 7px;">NISN: ${s.nis}</div>` : '';
       const barcodeHtmlLandscape = idCardConfig.visibility.barcode ? `
         <div class="landscape-barcode-box" style="z-index: 10;">
           <div class="barcode-graphic" id="barcode-${s.id}" style="transform: scale(0.65); transform-origin: center;"></div>
@@ -804,7 +804,7 @@ export default function StudentList({
                     <div class="barcode-text" style="font-size: 3.5px; letter-spacing: 0.04cm;">* ${s.nis || s.id} *</div>
                   </div>
         ` : '';
-        const nisHtmlLandscape2 = idCardConfig.visibility.nis ? `<div class="landscape-nis-text">NIS: ${s.nis}</div>` : '';
+        const nisHtmlLandscape2 = idCardConfig.visibility.nis ? `<div class="landscape-nis-text">NISN: ${s.nis}</div>` : '';
 
         return `
           <div class="card-pair-wrapper landscape-wrapper">
@@ -1919,7 +1919,7 @@ export default function StudentList({
                 <div className="truncate">
                   <h5 className="font-bold text-gray-900 group-hover:text-purple-700 transition-colors text-sm truncate">{student.name}</h5>
                   <div className="flex flex-wrap items-center gap-1.5 mt-1 text-xs text-gray-400 font-medium">
-                    <span className="font-mono text-gray-500">NIS: {student.nis}</span>
+                    <span className="font-mono text-gray-500">NISN: {student.nis}</span>
                     <span>•</span>
                     <span className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-md font-semibold text-[10px]">{student.className}</span>
                     {student.parentPhone && (
@@ -1998,7 +1998,7 @@ export default function StudentList({
             <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto">
               {/* NIS */}
               <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Nomor Induk Siswa (NIS) <span className="text-red-500">*</span></label>
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Nomor Induk Siswa Nasional (NISN) <span className="text-red-500">*</span></label>
                 <input
                   type="text"
                   required
@@ -2283,7 +2283,7 @@ export default function StudentList({
                 <span className="text-[10px] font-black text-purple-600 tracking-widest uppercase mb-1">SMA NEGERI 1 ABSENSI</span>
                 
                 <h3 className="font-bold text-gray-850 text-base">{viewingQrStudent.name}</h3>
-                <span className="text-xs text-gray-400 font-mono">NIS: {viewingQrStudent.nis} | {viewingQrStudent.className}</span>
+                <span className="text-xs text-gray-400 font-mono">NISN: {viewingQrStudent.nis} | {viewingQrStudent.className}</span>
 
                 {/* Actual SVG Code */}
                 <div className="bg-white p-4 rounded-xl shadow-xs border border-gray-100 my-4 flex justify-center items-center">
@@ -2343,7 +2343,7 @@ export default function StudentList({
                         <body>
                           <div class="card">
                             <h3>${viewingQrStudent.name}</h3>
-                            <p>NIS: ${viewingQrStudent.nis} | Kelas: ${viewingQrStudent.className}</p>
+                            <p>NISN: ${viewingQrStudent.nis} | Kelas: ${viewingQrStudent.className}</p>
                             <div class="qr" id="qr"></div>
                           </div>
                           <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
@@ -2543,7 +2543,7 @@ export default function StudentList({
                         <div className="grid grid-cols-2 gap-2">
                           {Object.entries({
                             photo: 'Foto Siswa',
-                            nis: 'NIS / NISN',
+                            nis: 'Tampilkan NISN',
                             barcode: 'QR Code',
                             signature: 'Tanda Tangan'
                           }).map(([key, label]) => (
@@ -2809,7 +2809,7 @@ export default function StudentList({
                           <div className="text-center w-full relative z-10">
                             <h4 className="font-extrabold text-[10px] text-gray-900 uppercase tracking-tight truncate leading-tight">{viewingIdCardStudent.name}</h4>
                             {idCardConfig.visibility.nis && (
-                              <span className="text-[7.5px] font-mono text-gray-500 font-semibold">NIS: {viewingIdCardStudent.nis}</span>
+                              <span className="text-[7.5px] font-mono text-gray-500 font-semibold">NISN: {viewingIdCardStudent.nis}</span>
                             )}
                           </div>
 
@@ -2917,7 +2917,7 @@ export default function StudentList({
                             <div>
                               <h4 className="font-extrabold text-[10px] text-gray-900 uppercase tracking-tight leading-none truncate max-w-[190px]">{viewingIdCardStudent.name}</h4>
                               {idCardConfig.visibility.nis && (
-                                <span className="text-[6px] font-mono text-gray-500 font-semibold leading-none">NIS: {viewingIdCardStudent.nis}</span>
+                                <span className="text-[6px] font-mono text-gray-500 font-semibold leading-none">NISN: {viewingIdCardStudent.nis}</span>
                               )}
                             </div>
 
