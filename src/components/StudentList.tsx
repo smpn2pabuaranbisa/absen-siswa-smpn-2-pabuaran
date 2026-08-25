@@ -676,10 +676,12 @@ export default function StudentList({
 
       const bgFrontHtml = idCardConfig.bgFront ? `
         <img src="${idCardConfig.bgFront}" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; opacity: 0.25;" />
+              object-position: center top;
       ` : '';
 
       const bgBackHtml = idCardConfig.bgBack ? `
         <img src="${idCardConfig.bgBack}" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; opacity: 0.15;" />
+              object-position: center top;
       ` : '';
 
       const nisHtml = idCardConfig.visibility.nis ? `<div class="student-nis-display">NISN: ${s.nis}</div>` : '';
@@ -1132,8 +1134,8 @@ export default function StudentList({
             }
 
             .avatar-frame {
-              width: 1.6cm;
-              height: 1.6cm;
+              width: 1.9cm;
+              height: 1.9cm;
               border-radius: 0.2cm;
               padding: 1.5px;
               border: 1.5px solid var(--primary);
@@ -1154,6 +1156,7 @@ export default function StudentList({
               width: 100%;
               height: 100%;
               object-fit: cover;
+              object-position: center top;
               display: block;
               border-radius: 0.15cm;
             }
@@ -1492,8 +1495,8 @@ export default function StudentList({
             }
 
             .landscape-avatar {
-              width: 1.4cm;
-              height: 1.4cm;
+              width: 1.6cm;
+              height: 1.6cm;
               margin-bottom: 0;
             }
 
@@ -1905,7 +1908,7 @@ export default function StudentList({
               <div className="flex items-center space-x-3.5 truncate">
                 {/* Avatar with gender color code */}
                 {student.photo ? (
-                  <img src={student.photo} className="h-11 w-11 rounded-xl object-cover border border-gray-100 shrink-0" alt="Foto" />
+                  <img src={student.photo} className="h-11 w-11 rounded-xl object-cover object-top border border-gray-100 shrink-0" alt="Foto" />
                 ) : (
                   <div className={`h-11 w-11 rounded-xl flex items-center justify-center font-bold text-sm shrink-0 uppercase tracking-wider ${
                     student.gender === 'L' 
@@ -2098,7 +2101,7 @@ export default function StudentList({
                 </div>
                 {formData.photo && (
                   <div className="mt-2.5 flex items-center gap-3 p-1.5 bg-slate-50 border border-slate-100 rounded-lg">
-                    <img src={formData.photo} className="h-12 w-12 object-cover rounded-md" alt="Pratinjau Foto Siswa" />
+                    <img src={formData.photo} className="h-12 w-12 object-cover object-top rounded-md" alt="Pratinjau Foto Siswa" />
                     <span className="text-xs text-gray-400 font-semibold truncate flex-1">Foto siswa siap disimpan</span>
                   </div>
                 )}
@@ -2775,14 +2778,14 @@ export default function StudentList({
                         <div className="flex-1 flex flex-col items-center p-3 justify-between bg-radial from-slate-50 to-white">
                           {/* Avatar Outline */}
                           {idCardConfig.visibility.photo && (
-                            <div className={`h-[60px] w-[60px] rounded-lg border-2 p-0.5 overflow-hidden shadow-xs bg-white relative z-10 ${
+                            <div className={`h-[72px] w-[72px] rounded-lg border-2 p-0.5 overflow-hidden shadow-xs bg-white relative z-10 ${
                               idCardTheme === 'navy' ? 'border-blue-700' :
                               idCardTheme === 'crimson' ? 'border-rose-700' :
                               idCardTheme === 'emerald' ? 'border-emerald-700' :
                               'border-amber-700'
                             }`}>
                               {viewingIdCardStudent.photo ? (
-                                <img src={viewingIdCardStudent.photo} className="h-full w-full rounded-md object-cover" alt="Foto Siswa" />
+                                <img src={viewingIdCardStudent.photo} className="h-full w-full rounded-md object-cover object-top" alt="Foto Siswa" />
                               ) : (
                                 <div className={`h-full w-full rounded-md flex items-center justify-center font-bold text-xs uppercase tracking-wider ${
                                   viewingIdCardStudent.gender === 'L' ? 'bg-blue-50 text-blue-700' : 'bg-rose-50 text-rose-700'
@@ -2874,14 +2877,14 @@ export default function StudentList({
                           {/* Left layout col */}
                           <div className="w-[65px] flex flex-col justify-between items-center border-r border-slate-100 pr-2">
                             {idCardConfig.visibility.photo ? (
-                              <div className={`h-[48px] w-[48px] rounded-lg border p-0.5 overflow-hidden shadow-3xs bg-white ${
+                              <div className={`h-[56px] w-[56px] rounded-lg border p-0.5 overflow-hidden shadow-3xs bg-white ${
                                 idCardTheme === 'navy' ? 'border-blue-700' :
                                 idCardTheme === 'crimson' ? 'border-rose-700' :
                                 idCardTheme === 'emerald' ? 'border-emerald-700' :
                                 'border-amber-700'
                               }`}>
                                 {viewingIdCardStudent.photo ? (
-                                  <img src={viewingIdCardStudent.photo} className="h-full w-full rounded-md object-cover" alt="Foto Siswa" />
+                                  <img src={viewingIdCardStudent.photo} className="h-full w-full rounded-md object-cover object-top" alt="Foto Siswa" />
                                 ) : viewingIdCardStudent.gender === 'L' ? (
                                   <svg viewBox="0 0 100 100" className="w-full h-full">
                                     <rect width="100%" height="100%" fill="#eff6ff"/>
@@ -2897,7 +2900,7 @@ export default function StudentList({
                                 )}
                               </div>
                             ) : (
-                              <div className="h-[48px] w-[48px]"></div>
+                              <div className="h-[56px] w-[56px]"></div>
                             )}
                             
                             {idCardConfig.visibility.barcode && (
