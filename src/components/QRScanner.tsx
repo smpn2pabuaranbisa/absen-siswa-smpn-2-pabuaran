@@ -6,7 +6,8 @@ import {
   ChangeEvent,
   FormEvent,
 } from "react";
-import { Student, AttendanceRecord } from "../types";
+import { Student, AttendanceRecord, AttendanceConfig } from "../types";
+import { getScheduleForDate } from "../lib/schedule";
 import {
   AlertCircle,
   CheckCircle,
@@ -17,6 +18,7 @@ import {
   Sparkles,
   Volume2,
   ScanLine,
+  Clock,
 } from "lucide-react";
 
 // Web Audio API helper for retro audio feedback
@@ -59,6 +61,7 @@ function playBeep(success: boolean) {
 interface QRScannerProps {
   students: Student[];
   records: AttendanceRecord[];
+  config?: AttendanceConfig;
   onAttendanceSuccess: (
     studentId: string,
     verifiedBy: "qr" | "manual",
@@ -74,6 +77,7 @@ interface QRScannerProps {
 export default function QRScanner({
   students,
   records,
+  config,
   onAttendanceSuccess,
 }: QRScannerProps) {
   const [activeTab, setActiveTab] = useState<"hardware" | "manual">("hardware");
@@ -104,6 +108,11 @@ export default function QRScanner({
   const studentsMap = useMemo(() => {
     return new Map(students.map((s) => [s.id, s]));
   }, [students]);
+
+  const todayScheduleInfo = useMemo(() => {
+    if (!config) return null;
+    return getScheduleForDate(config, new Date());
+  }, [config]);
 
   // Main QR success parser
   const handleQRDecoded = (decodedText: string) => {
@@ -527,10 +536,37 @@ export default function QRScanner({
           </div>
         </div>
 
-        <div className="mt-6 border-t border-gray-100 pt-4 text-[11px] text-gray-400 leading-relaxed">
-          💡 <strong>Ketentuan Jam Masuk:</strong> Pastikan siswa memindai kode
-          QR pada rentang jam absen sekolah yang telah disepakati untuk
-          menghindari kalkulasi keterlambatan.
+        <div className="mt-6 border-t border-gray-100 pt-4 text-[11px] text-gray-500 leading-relaxed flex items-start gap-2">
+          <Clock className="h-3.5 w-3.5 text-purple-600 shrink-0 mt-0.5" />
+          {todayScheduleInfo ? (
+            !todayScheduleInfo.isSunday &&
+            todayScheduleInfo.schedule &&
+            todayScheduleInfo.schedule.enabled ? (
+              <div className="tabular-nums">
+                <strong className="text-gray-800">
+                  Jadwal Hari {todayScheduleInfo.dayLabel}:
+                </strong>{" "}
+                Buka {todayScheduleInfo.schedule.checkInStart}
+                <span aria-hidden="true"> · </span>
+                Batas Tepat Waktu {todayScheduleInfo.schedule.checkInEnd}
+                <span aria-hidden="true"> · </span>
+                Pulang {todayScheduleInfo.schedule.checkOutStart}
+              </div>
+            ) : (
+              <div>
+                <strong className="text-gray-800">
+                  Hari {todayScheduleInfo.dayLabel} (
+                  {todayScheduleInfo.isSunday ? "Akhir Pekan" : "Libur KBM"}):
+                </strong>{" "}
+                Scanner tetap dibuka untuk pencatatan datang &amp; pulang tanpa pembatasan jam.
+              </div>
+            )
+          ) : (
+            <div>
+              <strong>Ketentuan Jam Masuk:</strong> Pastikan siswa memindai kode
+              QR sesuai jadwal masuk dan pulang sekolah yang telah ditetapkan.
+            </div>
+          )}
         </div>
       </div>
     </div>

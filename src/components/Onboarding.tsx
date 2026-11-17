@@ -1,6 +1,7 @@
 import React, { useState, FormEvent } from 'react';
 import { School, ChevronRight, Settings } from 'lucide-react';
 import { AttendanceConfig } from '../types';
+import { getDefaultDailySchedule } from '../lib/schedule';
 
 interface OnboardingProps {
   onComplete: (config: Omit<AttendanceConfig, 'selectedClassFilter'>) => void;
@@ -8,8 +9,9 @@ interface OnboardingProps {
 
 export default function Onboarding({ onComplete }: OnboardingProps) {
   const [schoolName, setSchoolName] = useState('');
-  const [checkInStart, setCheckInStart] = useState('06:00');
+  const [checkInStart, setCheckInStart] = useState('06:30');
   const [checkInEnd, setCheckInEnd] = useState('07:30');
+  const [checkOutStart, setCheckOutStart] = useState('14:00');
   const [logoUrl, setLogoUrl] = useState('');
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -36,6 +38,8 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
       schoolName,
       checkInStart,
       checkInEnd,
+      checkOutStart,
+      dailySchedule: getDefaultDailySchedule(checkInStart, checkInEnd, checkOutStart),
       waAutoSend: false,
       waApiToken: '',
       logoUrl
@@ -86,28 +90,41 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
               </div>
             </div>
             
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1">Jam Mulai Absen</label>
+                <label className="block text-sm font-semibold text-slate-700 mb-1">Jam Buka Masuk</label>
                 <input
                   type="time"
                   required
                   value={checkInStart}
                   onChange={(e) => setCheckInStart(e.target.value)}
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition-all"
+                  className="w-full px-3 py-3 rounded-xl border border-slate-200 tabular-nums focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition-all"
                 />
               </div>
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1">Batas Waktu (Terlambat)</label>
+                <label className="block text-sm font-semibold text-slate-700 mb-1">Batas Terlambat</label>
                 <input
                   type="time"
                   required
                   value={checkInEnd}
                   onChange={(e) => setCheckInEnd(e.target.value)}
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition-all"
+                  className="w-full px-3 py-3 rounded-xl border border-slate-200 tabular-nums focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition-all"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1">Jam Mulai Pulang</label>
+                <input
+                  type="time"
+                  required
+                  value={checkOutStart}
+                  onChange={(e) => setCheckOutStart(e.target.value)}
+                  className="w-full px-3 py-3 rounded-xl border border-slate-200 tabular-nums focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition-all"
                 />
               </div>
             </div>
+            <p className="text-xs text-slate-500">
+              Jadwal per hari (Senin – Sabtu) dapat disesuaikan lagi nanti di menu Pengaturan.
+            </p>
           </div>
           
           <div className="bg-blue-50 p-4 rounded-xl flex items-start gap-3 border border-blue-100 text-blue-800 text-sm">

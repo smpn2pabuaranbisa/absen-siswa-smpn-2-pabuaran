@@ -1,9 +1,9 @@
 import { useState, useMemo, useEffect, FormEvent, ChangeEvent } from 'react';
-import { AttendanceConfig, Student, AttendanceRecord } from '../types';
+import { AttendanceConfig, Student, AttendanceRecord, DailyScheduleMap, WorkDayKey } from '../types';
 import { 
   School, Clock, Sliders, Save, Database, 
   Trash2, Plus, Download, Upload, RefreshCw, Check, 
-  Settings, Layers, BookOpen, AlertCircle
+  Settings, Layers, BookOpen, AlertCircle, Copy
 } from 'lucide-react';
 import { 
   safeLocalStorageSet, 
@@ -11,6 +11,11 @@ import {
   safeLocalStorageRemove, 
   compressImage 
 } from '../lib/storage';
+import {
+  WORK_DAYS,
+  getEffectiveDailySchedule,
+  timeToMinutes,
+} from '../lib/schedule';
 
 
 interface ClassConfigProps {
@@ -32,8 +37,9 @@ export default function ClassConfig({
 }: ClassConfigProps) {
   // Input fields state
   const [schoolName, setSchoolName] = useState(config.schoolName);
-  const [checkInStart, setCheckInStart] = useState(config.checkInStart);
-  const [checkInEnd, setCheckInEnd] = useState(config.checkInEnd);
+  const [dailySchedule, setDailySchedule] = useState<DailyScheduleMap>(() =>
+    getEffectiveDailySchedule(config),
+  );
   const [waAutoSend, setWaAutoSend] = useState(config.waAutoSend || false);
   const [waProvider, setWaProvider] = useState<'fonnte' | 'custom'>(config.waProvider || 'fonnte');
   const [waApiToken, setWaApiToken] = useState(config.waApiToken || '');
@@ -60,6 +66,10 @@ export default function ClassConfig({
   });
 
   // Keep local states in sync when global config changes
+  useEffect(() => {
+    setDailySchedule(getEffectiveDailySchedule(config));
+  }, [config.dailySchedule, config.checkInStart, config.checkInEnd, config.checkOutStart]);
+
   useEffect(() => {
     if (config.headmasterName !== undefined) setHeadmasterName(config.headmasterName);
     if (config.headmasterNip !== undefined) setHeadmasterNip(config.headmasterNip);
@@ -90,13 +100,71 @@ export default function ClassConfig({
     return Array.from(classes).sort();
   }, [students, config.customClasses]);
 
+  const handleDayScheduleChange = (
+    dayKey: WorkDayKey,
+    field: 'enabled' | 'checkInStart' | 'checkInEnd' | 'checkOutStart',
+    value: boolean | string,
+  ) => {
+    setDailySchedule((prev) => ({
+      ...prev,
+      [dayKey]: {
+        ...prev[dayKey],
+        [field]: value,
+      },
+    }));
+  };
+
+  const applyMondayToTueThu = () => {
+    setDailySchedule((prev) => {
+      const mon = prev.senin;
+      return {
+        ...prev,
+        selasa: { ...prev.selasa, checkInStart: mon.checkInStart, checkInEnd: mon.checkInEnd, checkOutStart: mon.checkOutStart },
+        rabu: { ...prev.rabu, checkInStart: mon.checkInStart, checkInEnd: mon.checkInEnd, checkOutStart: mon.checkOutStart },
+        kamis: { ...prev.kamis, checkInStart: mon.checkInStart, checkInEnd: mon.checkInEnd, checkOutStart: mon.checkOutStart },
+      };
+    });
+  };
+
+  const applyMondayToAll = () => {
+    setDailySchedule((prev) => {
+      const mon = prev.senin;
+      const next = { ...prev };
+      for (const day of WORK_DAYS) {
+        next[day.key] = {
+          ...next[day.key],
+          checkInStart: mon.checkInStart,
+          checkInEnd: mon.checkInEnd,
+          checkOutStart: mon.checkOutStart,
+        };
+      }
+      return next;
+    });
+  };
+
   const handleSaveConfig = (e: FormEvent) => {
     e.preventDefault();
+
+    for (const day of WORK_DAYS) {
+      const item = dailySchedule[day.key];
+      if (!item.enabled) continue;
+      if (timeToMinutes(item.checkInEnd) < timeToMinutes(item.checkInStart)) {
+        setAlertMessage(`Jadwal hari ${day.label}: Batas Terlambat (${item.checkInEnd}) tidak boleh lebih awal dari Jam Buka (${item.checkInStart}).`);
+        return;
+      }
+      if (timeToMinutes(item.checkOutStart) <= timeToMinutes(item.checkInEnd)) {
+        setAlertMessage(`Jadwal hari ${day.label}: Jam Pulang (${item.checkOutStart}) harus lebih lambat dari Batas Terlambat (${item.checkInEnd}).`);
+        return;
+      }
+    }
+
     onUpdateConfig({
       ...config,
       schoolName: schoolName.trim(),
-      checkInStart,
-      checkInEnd,
+      checkInStart: dailySchedule.senin.checkInStart,
+      checkInEnd: dailySchedule.senin.checkInEnd,
+      checkOutStart: dailySchedule.senin.checkOutStart,
+      dailySchedule,
       waAutoSend,
       waProvider,
       waApiToken: waApiToken.trim(),
@@ -489,40 +557,180 @@ export default function ClassConfig({
             </div>
           </div>
 
-          {/* Check in limits */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5 flex items-center gap-1">
-                <Clock className="h-3.5 w-3.5 text-gray-400" /> Jam Buka Absen
-              </label>
-              <input
-                type="time"
-                required
-                value={checkInStart}
-                onChange={(e) => setCheckInStart(e.target.value)}
-                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-semibold text-gray-800 outline-none focus:bg-white focus:border-purple-500 transition-all"
-              />
+          {/* Per-Day Schedule (Senin - Sabtu) */}
+          <div className="border-t border-gray-100 pt-5 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <div>
+                <h5 className="text-xs font-bold text-gray-800 uppercase tracking-wider flex items-center gap-1.5">
+                  <Clock className="h-3.5 w-3.5 text-purple-600" />
+                  Jadwal Jam Masuk & Pulang (Senin – Sabtu)
+                </h5>
+                <p className="text-[11px] text-gray-500 mt-0.5">
+                  Atur jam buka masuk, batas tepat waktu, dan jam mulai pulang untuk tiap hari sekolah.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={applyMondayToTueThu}
+                  className="px-2.5 py-1.5 text-[11px] font-semibold bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap"
+                  title="Salin jam Senin ke Selasa, Rabu, dan Kamis"
+                >
+                  <Copy className="h-3 w-3" /> Senin ke Sel–Kam
+                </button>
+                <button
+                  type="button"
+                  onClick={applyMondayToAll}
+                  className="px-2.5 py-1.5 text-[11px] font-semibold bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-lg flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap"
+                  title="Salin jam Senin ke semua hari Senin–Sabtu"
+                >
+                  <Copy className="h-3 w-3" /> Samakan Semua
+                </button>
+              </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5 flex items-center gap-1">
-                <Clock className="h-3.5 w-3.5 text-gray-400" /> Batas Toleransi Masuk
-              </label>
-              <input
-                type="time"
-                required
-                value={checkInEnd}
-                onChange={(e) => setCheckInEnd(e.target.value)}
-                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-semibold text-gray-800 outline-none focus:bg-white focus:border-purple-500 transition-all"
-              />
-            </div>
-          </div>
+            <div className="border border-gray-200 rounded-xl overflow-hidden bg-white">
+              {/* Desktop Header */}
+              <div className="hidden sm:grid sm:grid-cols-12 gap-2 px-3 py-2 bg-gray-50 border-b border-gray-200 text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                <div className="col-span-3">Hari</div>
+                <div className="col-span-3">Jam Buka</div>
+                <div className="col-span-3">Batas Terlambat</div>
+                <div className="col-span-3">Jam Pulang</div>
+              </div>
 
-          <div className="p-3.5 bg-purple-50 text-purple-900 border border-purple-100 rounded-xl text-xs flex items-start gap-2">
-            <Clock className="h-4 w-4 text-purple-600 shrink-0 mt-0.5" />
-            <div>
-              <strong className="block">Ketentuan Terlambat:</strong>
-              Setiap pemindaian QR Code siswa yang melebihi batas toleransi jam {checkInEnd} pagi akan tercatat di sistem dengan label toleransi khusus atau catatan terlambat pada laporan ekspor.
+              <div className="divide-y divide-gray-100">
+                {WORK_DAYS.map((day) => {
+                  const row = dailySchedule[day.key];
+                  const isInvalidRange =
+                    row.enabled &&
+                    (timeToMinutes(row.checkInEnd) < timeToMinutes(row.checkInStart) ||
+                      timeToMinutes(row.checkOutStart) <= timeToMinutes(row.checkInEnd));
+
+                  return (
+                    <div
+                      key={day.key}
+                      className={`px-3 py-2.5 transition-colors ${
+                        row.enabled ? 'bg-white' : 'bg-gray-50/80'
+                      }`}
+                    >
+                      <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center">
+                        {/* Day label + Aktif/Libur segmented control */}
+                        <div className="sm:col-span-3 flex items-center justify-between sm:justify-start gap-2">
+                          <span
+                            className={`text-xs font-bold min-w-[52px] ${
+                              row.enabled ? 'text-gray-900' : 'text-gray-400'
+                            }`}
+                          >
+                            {day.label}
+                          </span>
+                          <div className="inline-flex p-0.5 bg-gray-100 rounded-lg border border-gray-200/60">
+                            <button
+                              type="button"
+                              onClick={() => handleDayScheduleChange(day.key, 'enabled', true)}
+                              className={`px-2 py-0.5 text-[10px] font-semibold rounded-md transition-colors cursor-pointer ${
+                                row.enabled
+                                  ? 'bg-white text-purple-700 shadow-2xs'
+                                  : 'text-gray-500 hover:text-gray-800'
+                              }`}
+                            >
+                              Aktif
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDayScheduleChange(day.key, 'enabled', false)}
+                              className={`px-2 py-0.5 text-[10px] font-semibold rounded-md transition-colors cursor-pointer ${
+                                !row.enabled
+                                  ? 'bg-white text-slate-700 shadow-2xs'
+                                  : 'text-gray-500 hover:text-gray-800'
+                              }`}
+                            >
+                              Libur
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Time inputs */}
+                        <div className="sm:col-span-9 grid grid-cols-3 gap-2">
+                          <div>
+                            <label className="sm:hidden block text-[10px] font-semibold text-gray-500 mb-0.5">
+                              Buka
+                            </label>
+                            <input
+                              type="time"
+                              required={row.enabled}
+                              disabled={!row.enabled}
+                              value={row.checkInStart}
+                              onChange={(e) =>
+                                handleDayScheduleChange(day.key, 'checkInStart', e.target.value)
+                              }
+                              className="w-full bg-gray-50 disabled:bg-gray-100 disabled:text-gray-400 border border-gray-200 rounded-lg px-2 py-1.5 text-xs font-semibold tabular-nums text-gray-800 outline-none focus:bg-white focus:border-purple-500 transition-colors"
+                            />
+                          </div>
+                          <div>
+                            <label className="sm:hidden block text-[10px] font-semibold text-gray-500 mb-0.5">
+                              Terlambat
+                            </label>
+                            <input
+                              type="time"
+                              required={row.enabled}
+                              disabled={!row.enabled}
+                              value={row.checkInEnd}
+                              onChange={(e) =>
+                                handleDayScheduleChange(day.key, 'checkInEnd', e.target.value)
+                              }
+                              className={`w-full bg-gray-50 disabled:bg-gray-100 disabled:text-gray-400 border rounded-lg px-2 py-1.5 text-xs font-semibold tabular-nums text-gray-800 outline-none focus:bg-white transition-colors ${
+                                isInvalidRange
+                                  ? 'border-amber-400 focus:border-amber-500'
+                                  : 'border-gray-200 focus:border-purple-500'
+                              }`}
+                            />
+                          </div>
+                          <div>
+                            <label className="sm:hidden block text-[10px] font-semibold text-gray-500 mb-0.5">
+                              Pulang
+                            </label>
+                            <input
+                              type="time"
+                              required={row.enabled}
+                              disabled={!row.enabled}
+                              value={row.checkOutStart}
+                              onChange={(e) =>
+                                handleDayScheduleChange(day.key, 'checkOutStart', e.target.value)
+                              }
+                              className={`w-full bg-gray-50 disabled:bg-gray-100 disabled:text-gray-400 border rounded-lg px-2 py-1.5 text-xs font-semibold tabular-nums text-gray-800 outline-none focus:bg-white transition-colors ${
+                                isInvalidRange
+                                  ? 'border-amber-400 focus:border-amber-500'
+                                  : 'border-gray-200 focus:border-purple-500'
+                              }`}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      {isInvalidRange && (
+                        <p className="text-[11px] text-amber-700 mt-1.5">
+                          Periksa urutan jam: Jam Buka ≤ Batas Terlambat &lt; Jam Pulang.
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="p-3.5 bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs space-y-1">
+              <strong className="block text-slate-900">Aturan Mesin Scan QR:</strong>
+              <p>
+                • Scan lebih awal sebelum <strong>Jam Buka</strong> tetap diterima sebagai hadir tepat waktu.
+              </p>
+              <p>
+                • Scan pertama hari itu selalu dicatat sebagai <strong>Absen Datang</strong> (otomatis <em>Terlambat</em> jika melewati Batas Terlambat).
+              </p>
+              <p>
+                • Scan kedua (<strong>Absen Pulang</strong>) hanya diterima mulai <strong>Jam Pulang</strong> pada hari aktif tersebut.
+              </p>
+              <p>
+                • Pada hari <strong>Minggu</strong> atau hari bertanda <strong>Libur</strong>, scanner tetap dibuka tanpa pembatasan jam.
+              </p>
             </div>
           </div>
 

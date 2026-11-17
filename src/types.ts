@@ -23,10 +23,29 @@ export interface AttendanceRecord {
   type?: 'datang' | 'pulang';
 }
 
+export type WorkDayKey =
+  | 'senin'
+  | 'selasa'
+  | 'rabu'
+  | 'kamis'
+  | 'jumat'
+  | 'sabtu';
+
+export interface DaySchedule {
+  enabled: boolean;
+  checkInStart: string;  // e.g. "06:30"
+  checkInEnd: string;    // e.g. "07:30"
+  checkOutStart: string; // e.g. "14:00"
+}
+
+export type DailyScheduleMap = Record<WorkDayKey, DaySchedule>;
+
 export interface AttendanceConfig {
   schoolName: string;
-  checkInStart: string; // e.g. "06:30"
-  checkInEnd: string;   // e.g. "08:00"
+  checkInStart: string; // e.g. "06:30" (legacy/default fallback)
+  checkInEnd: string;   // e.g. "08:00" (legacy/default fallback)
+  checkOutStart?: string; // e.g. "14:00" (default fallback)
+  dailySchedule?: DailyScheduleMap;
   selectedClassFilter: string; // Default or current selected class
   customClasses?: string[];
   waAutoSend?: boolean;

@@ -12,6 +12,7 @@ import {
   INITIAL_CONFIG,
   generateMockAttendance,
 } from "./data/mockData";
+import { getScheduleForDate, parseTimeOnDate } from "./lib/schedule";
 
 // Component Imports
 import DashboardStats from "./components/DashboardStats";
@@ -436,21 +437,42 @@ export default function App() {
 
     let scanType: 'datang' | 'pulang' = 'datang';
 
+    const now = new Date();
+    const todayInfo = getScheduleForDate(config, now);
+    const hasActiveDaySchedule = Boolean(
+      !todayInfo.isSunday && todayInfo.schedule && todayInfo.schedule.enabled,
+    );
+
     if (datangRecord && pulangRecord) {
       return {
         success: false,
         message: `Siswa "${student.name}" sudah menyelesaikan absen datang dan pulang hari ini!`,
       };
     } else if (datangRecord) {
-      // Prevent accidental double scan within 3 hours
-      const timeDiff = new Date().getTime() - new Date(datangRecord.timestamp).getTime();
-      if (timeDiff < 3 * 60 * 60 * 1000) {
+      const timeDiff = now.getTime() - new Date(datangRecord.timestamp).getTime();
+
+      if (
+        hasActiveDaySchedule &&
+        todayInfo.schedule &&
+        (verifiedBy === "qr" || customStatus === "hadir")
+      ) {
+        const checkOutLimit = parseTimeOnDate(
+          todayInfo.schedule.checkOutStart,
+          now,
+        );
+        if (now < checkOutLimit) {
+          return {
+            success: false,
+            message: `Belum waktunya pulang. Jam pulang hari ${todayInfo.dayLabel} pukul ${todayInfo.schedule.checkOutStart}.`,
+          };
+        }
+      } else if (timeDiff < 60 * 1000) {
         return {
           success: false,
-          message: `Siswa "${student.name}" baru saja absen datang. Silakan tunggu 3 jam untuk absen pulang.`,
+          message: `Siswa "${student.name}" baru saja absen datang. Silakan tunggu sebentar sebelum absen pulang.`,
         };
       }
-      scanType = 'pulang';
+      scanType = "pulang";
     }
 
     // Determine status (Hadir/Terlambat or Custom specified)
@@ -458,17 +480,21 @@ export default function App() {
     let note: string | undefined = undefined;
 
     if (verifiedBy === "qr") {
-      if (scanType === 'datang') {
-        // Compare time against limit (CheckInEnd)
-        const now = new Date();
-        const [limitHour, limitMin] = config.checkInEnd.split(":").map(Number);
-        const limitTime = new Date();
-        limitTime.setHours(limitHour, limitMin, 0, 0);
-
-        if (now > limitTime) {
-          statusToRecord = "hadir";
-          note = "Terlambat (Pindai QR)";
+      if (scanType === "datang") {
+        if (hasActiveDaySchedule && todayInfo.schedule) {
+          const limitTime = parseTimeOnDate(
+            todayInfo.schedule.checkInEnd,
+            now,
+          );
+          if (now > limitTime) {
+            statusToRecord = "hadir";
+            note = "Terlambat (Pindai QR)";
+          } else {
+            statusToRecord = "hadir";
+            note = "Tepat Waktu (Pindai QR)";
+          }
         } else {
+          // Minggu atau hari yang ditandai libur: scanner tetap buka
           statusToRecord = "hadir";
           note = "Tepat Waktu (Pindai QR)";
         }
@@ -934,6 +960,7 @@ export default function App() {
             <QRScanner
               students={students}
               records={records}
+              config={config}
               onAttendanceSuccess={handleAttendanceSuccess}
             />
           )}
