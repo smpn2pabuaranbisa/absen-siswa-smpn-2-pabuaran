@@ -99,6 +99,26 @@ function Barcode({ value }: { value: string }) {
   );
 }
 
+// Generate inline SVG barcode string identical to preview component
+function renderBarcodeSvgString(value: string): string {
+  const normalized = `*${String(value || '').toUpperCase()}*`;
+  let binaryString = '';
+  for (let i = 0; i < normalized.length; i++) {
+    const char = normalized[i];
+    const pattern = CODE39_MAP[char] || CODE39_MAP[' '];
+    binaryString += pattern + '0';
+  }
+
+  let rects = '';
+  for (let i = 0; i < binaryString.length; i++) {
+    if (binaryString[i] === '1') {
+      rects += `<rect x="${i}" y="0" width="1.2" height="40" fill="#1e293b" />`;
+    }
+  }
+
+  return `<svg viewBox="0 0 ${binaryString.length} 40" style="width:100%;height:100%;display:block;" preserveAspectRatio="none">${rects}</svg>`;
+}
+
 interface StudentListProps {
   students: Student[];
   onAddStudent: (student: Omit<Student, 'id'>) => void;
@@ -652,18 +672,18 @@ export default function StudentList({
 
       const signatureSvg = idCardConfig.visibility.signature ? (
         signatureImage ? `
-        <img src="${signatureImage}" style="position: absolute; left: 50%; transform: translateX(-50%); top: -12px; max-height: 28px; max-width: 60px; object-fit: contain; z-index: 10;" alt="Tanda Tangan" />
+        <img src="${signatureImage}" class="sig-img" alt="Tanda Tangan" />
       ` : `
-        <svg viewBox="0 0 100 40" class="sig-path" style="width:70px; height:28px; opacity: 0.85;">
+        <svg viewBox="0 0 100 40" class="sig-path" style="opacity: 0.85;">
           <path d="M10 25 C 18 12, 28 8, 38 18 C 45 25, 42 6, 52 14 C 60 22, 68 25, 82 18 C 88 16, 76 32, 92 25" fill="none" stroke="${strokeColor}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
       `) : '';
 
       const stampSvg = idCardConfig.visibility.signature ? (
         stampImage ? `
-        <img src="${stampImage}" style="width: 26px; height: 26px; object-fit: contain; position: absolute; left: 50%; transform: translateX(-28px) rotate(-15deg); top: -10px; opacity: 0.65; pointer-events: none; z-index: 20;" alt="Stempel" />
+        <img src="${stampImage}" class="stamp-img" alt="Stempel" />
       ` : `
-        <svg viewBox="0 0 100 100" class="stamp-svg" style="width: 52px; height: 52px; position: absolute; left: 50%; transform: translateX(-35%) rotate(-15deg); bottom: -6px; opacity: 0.28; pointer-events: none; color: ${strokeColor};">
+        <svg viewBox="0 0 100 100" class="stamp-svg" style="color: ${strokeColor};">
           <circle cx="50" cy="50" r="44" fill="none" stroke="currentColor" stroke-width="1.8" stroke-dasharray="3 1.5"/>
           <circle cx="50" cy="50" r="40" fill="none" stroke="currentColor" stroke-width="1.2"/>
           <circle cx="50" cy="50" r="32" fill="none" stroke="currentColor" stroke-width="0.8"/>
@@ -675,29 +695,26 @@ export default function StudentList({
       `) : '';
 
       const bgFrontHtml = idCardConfig.bgFront ? `
-        <img src="${idCardConfig.bgFront}" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; opacity: 0.25;" />
-              object-position: center top;
+        <img src="${idCardConfig.bgFront}" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; object-position: center top; z-index: 0; opacity: 0.25;" />
       ` : '';
 
       const bgBackHtml = idCardConfig.bgBack ? `
-        <img src="${idCardConfig.bgBack}" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; opacity: 0.15;" />
-              object-position: center top;
+        <img src="${idCardConfig.bgBack}" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; object-position: center top; z-index: 0; opacity: 0.15;" />
       ` : '';
 
       const nisHtml = idCardConfig.visibility.nis ? `<div class="student-nis-display">NISN: ${s.nis}</div>` : '';
+      const barcodeSvgString = renderBarcodeSvgString(s.nis || s.id);
       const barcodeHtmlPortrait = idCardConfig.visibility.barcode ? `
         <!-- Linear Barcode Container -->
         <div class="barcode-container" style="z-index: 10;">
-          <div class="barcode-graphic" id="barcode-${s.id}"></div>
-          <div class="barcode-text">* ${s.nis || s.id} *</div>
+          <div class="barcode-graphic">${barcodeSvgString}</div>
         </div>
       ` : '';
 
       const nisHtmlLandscape = idCardConfig.visibility.nis ? `<div class="student-nis-display" style="font-size: 7px;">NISN: ${s.nis}</div>` : '';
       const barcodeHtmlLandscape = idCardConfig.visibility.barcode ? `
         <div class="landscape-barcode-box" style="z-index: 10;">
-          <div class="barcode-graphic" id="barcode-${s.id}" style="transform: scale(0.65); transform-origin: center;"></div>
-          <div class="barcode-text" style="font-size: 5px;">* ${s.nis || s.id} *</div>
+          <div class="barcode-graphic" style="transform: scale(0.65); transform-origin: center;">${barcodeSvgString}</div>
         </div>
       ` : '';
 
@@ -802,8 +819,7 @@ export default function StudentList({
         // LANDSCAPE CARD
         const barcodeHtmlLandscape2 = idCardConfig.visibility.barcode ? `
                   <div class="barcode-container landscape-barcode-container" style="z-index: 10;">
-                    <div class="barcode-graphic" id="barcode-${s.id}"></div>
-                    <div class="barcode-text" style="font-size: 3.5px; letter-spacing: 0.04cm;">* ${s.nis || s.id} *</div>
+                    <div class="barcode-graphic">${barcodeSvgString}</div>
                   </div>
         ` : '';
         const nisHtmlLandscape2 = idCardConfig.visibility.nis ? `<div class="landscape-nis-text">NISN: ${s.nis}</div>` : '';
@@ -1011,10 +1027,10 @@ export default function StudentList({
               flex-direction: row;
               align-items: center;
               gap: 15px;
-              background-color: white;
-              padding: 15px;
-              border-radius: 16px;
-              border: 1px dashed #d1d5db;
+              background-color: transparent;
+              padding: 0;
+              border-radius: 0;
+              border: none;
               page-break-inside: avoid;
             }
 
@@ -1099,7 +1115,7 @@ export default function StudentList({
             }
 
             .school-name-text {
-              font-size: 6px;
+              font-size: 7.5px;
               font-weight: 800;
               text-transform: uppercase;
               letter-spacing: 0.3px;
@@ -1109,10 +1125,10 @@ export default function StudentList({
             }
 
             .document-title {
-              font-size: 5px;
-              font-weight: 500;
+              font-size: 6px;
+              font-weight: 600;
               color: #fbbf24;
-              letter-spacing: 0.3px;
+              letter-spacing: 0.4px;
               margin-top: 1px;
             }
 
@@ -1127,15 +1143,15 @@ export default function StudentList({
               display: flex;
               flex-direction: column;
               align-items: center;
-              padding: 0.25cm 0.2cm 0.1cm 0.2cm;
+              padding: 0.15cm 0.2cm 0.08cm 0.2cm;
               box-sizing: border-box;
               background-image: radial-gradient(circle at 10% 20%, rgba(var(--primary-rgb), 0.02) 0%, transparent 40%),
                                 radial-gradient(circle at 90% 80%, rgba(var(--primary-rgb), 0.02) 0%, transparent 40%);
             }
 
             .avatar-frame {
-              width: 1.9cm;
-              height: 1.9cm;
+              width: 1.8cm;
+              height: 2.4cm;
               border-radius: 0.2cm;
               padding: 1.5px;
               border: 1.5px solid var(--primary);
@@ -1143,7 +1159,7 @@ export default function StudentList({
               background-color: white;
               overflow: hidden;
               box-sizing: border-box;
-              margin-bottom: 0.1cm;
+              margin-bottom: 0.08cm;
             }
 
             .avatar-svg {
@@ -1162,71 +1178,74 @@ export default function StudentList({
             }
 
             .student-name-display {
-              font-size: 8.5px;
-              font-weight: 800;
-              color: #111827;
+              font-size: 11px;
+              font-weight: 900;
+              color: #0f172a;
               text-align: center;
-              line-height: 1.1;
+              line-height: 1.15;
               text-transform: uppercase;
               max-width: 100%;
               white-space: nowrap;
               text-overflow: ellipsis;
               overflow: hidden;
-              margin-bottom: 1px;
+              margin-bottom: 1.5px;
+              letter-spacing: 0.2px;
             }
 
             .student-nis-display {
-              font-size: 6px;
-              font-weight: 600;
-              color: #6b7280;
+              font-size: 7.5px;
+              font-weight: 700;
+              color: #475569;
               font-family: monospace;
-              margin-bottom: 0.15cm;
+              margin-bottom: 0.09cm;
+              letter-spacing: 0.5px;
             }
 
             .info-table {
               width: 100%;
-              background-color: #f9fafb;
+              background-color: #f8fafc;
               border-radius: 0.15cm;
-              padding: 0.1cm 0.15cm;
-              border: 0.5px solid #e5e7eb;
+              padding: 0.12cm 0.18cm;
+              border: 0.8px solid #e2e8f0;
               box-sizing: border-box;
             }
 
             .info-row {
               display: flex;
               justify-content: space-between;
-              padding: 2px 0;
-              border-bottom: 0.5px solid #f3f4f6;
+              padding: 2.5px 0;
+              border-bottom: 0.5px solid #f1f5f9;
             }
             .info-row:last-child {
               border-bottom: none;
             }
 
             .info-label {
-              font-size: 5px;
-              font-weight: 700;
-              color: #9ca3af;
+              font-size: 6.5px;
+              font-weight: 800;
+              color: #64748b;
+              letter-spacing: 0.2px;
             }
 
             .info-value {
-              font-size: 5.5px;
-              font-weight: 700;
-              color: #374151;
+              font-size: 7px;
+              font-weight: 800;
+              color: #1e293b;
             }
             
             .status-active {
-              color: #10b981;
-              font-weight: 800;
+              color: #059669;
+              font-weight: 900;
             }
 
             .card-footer-band {
-              height: 1.8cm;
+              height: 1.9cm;
               border-top: 1px solid #e5e7eb;
               display: flex;
               flex-direction: column;
               align-items: center;
               justify-content: center;
-              padding: 0.1cm 0.2cm;
+              padding: 0.08cm 0.2cm 0.28cm 0.2cm;
               box-sizing: border-box;
               background-color: #fafafa;
               position: relative;
@@ -1237,10 +1256,10 @@ export default function StudentList({
               background-color: white;
               border: 0.5px solid #cbd5e1;
               border-radius: 0.2cm;
-              padding: 0.12cm 0.15cm;
+              padding: 0.1cm 0.15cm;
               box-sizing: border-box;
-              margin-top: 0.15cm;
-              margin-bottom: 0.05cm;
+              margin-top: 0.09cm;
+              margin-bottom: 0;
               display: flex;
               flex-direction: column;
               align-items: center;
@@ -1249,7 +1268,7 @@ export default function StudentList({
 
             .barcode-graphic {
               width: 100%;
-              height: 0.65cm;
+              height: 0.58cm;
               display: flex;
               align-items: center;
               justify-content: center;
@@ -1257,9 +1276,9 @@ export default function StudentList({
 
             .barcode-text {
               font-family: monospace;
-              font-size: 4.5px;
+              font-size: 6px;
               font-weight: 800;
-              color: #64748b;
+              color: #334155;
               margin-top: 2px;
               letter-spacing: 0.08cm;
               text-transform: uppercase;
@@ -1279,46 +1298,90 @@ export default function StudentList({
             .validity-sticker {
               background-color: #10b981;
               color: white;
-              font-size: 4px;
+              font-size: 5px;
               font-weight: 900;
-              padding: 1px 4px;
+              padding: 1.5px 5px;
               border-radius: 2px;
               position: absolute;
               top: 0;
               right: 0;
               margin-bottom: 0;
+              z-index: 30;
             }
 
             .signature-title-text {
-              font-size: 4.5px;
-              font-weight: 600;
-              color: #4b5563;
-              margin-top: 1px;
-              margin-bottom: 1px;
+              font-size: 5.5px;
+              font-weight: 700;
+              color: #374151;
+              margin-top: 0;
+              margin-bottom: 0;
+              position: relative;
+              z-index: 30;
             }
 
             .signature-display {
               width: 100%;
-              height: 0.5cm;
+              height: 0.9cm;
               position: relative;
               display: flex;
               justify-content: center;
               align-items: center;
-              margin-bottom: 2px;
+              margin-bottom: 0;
+            }
+
+            .sig-img {
+              position: absolute;
+              left: 50%;
+              top: 50%;
+              transform: translate(-45%, -50%);
+              max-height: 34px;
+              max-width: 92px;
+              object-fit: contain;
+              z-index: 10;
+            }
+
+            .stamp-img {
+              width: 34px;
+              height: 34px;
+              object-fit: contain;
+              position: absolute;
+              left: 50%;
+              top: 50%;
+              transform: translate(-42px, -50%) rotate(-12deg);
+              opacity: 0.65;
+              pointer-events: none;
+              z-index: 20;
             }
 
             .sig-path {
+              width: 82px;
+              height: 32px;
               z-index: 10;
               position: relative;
             }
 
+            .stamp-svg {
+              width: 42px;
+              height: 42px;
+              position: absolute;
+              left: 50%;
+              top: 50%;
+              transform: translate(-65%, -50%) rotate(-15deg);
+              opacity: 0.28;
+              pointer-events: none;
+              z-index: 20;
+            }
+
             .signer-name-text {
-              font-size: 5px;
-              font-weight: 800;
-              color: #111827;
+              font-size: 6.8px;
+              font-weight: 900;
+              color: #0f172a;
               text-decoration: underline;
               text-align: center;
-              margin-top: -3px;
+              margin-top: -1px;
+              margin-bottom: 1px;
+              position: relative;
+              z-index: 30;
             }
 
             /* PORTRAIT BACK CARD STYLING */
@@ -1326,52 +1389,53 @@ export default function StudentList({
               background-color: white;
               display: flex;
               flex-direction: column;
-              padding: 0.3cm 0.2cm;
+              padding: 0.25cm 0.22cm;
               box-sizing: border-box;
             }
 
             .back-banner {
               background: var(--gradient);
               color: white;
-              padding: 0.15cm;
+              padding: 0.14cm 0.2cm;
               border-radius: 0.15cm;
-              font-size: 6px;
+              font-size: 7.5px;
               font-weight: 800;
               display: flex;
               align-items: center;
-              gap: 4px;
+              gap: 5px;
               text-transform: uppercase;
-              letter-spacing: 0.2px;
+              letter-spacing: 0.3px;
               justify-content: center;
             }
             
             .back-logo-icon {
-              width: 8px;
-              height: 8px;
+              width: 10px;
+              height: 10px;
               color: #fbbf24;
             }
 
             .rules-list-container {
-              margin-top: 0.25cm;
+              margin-top: 0.2cm;
               flex: 1;
               display: flex;
               flex-direction: column;
-              gap: 0.1cm;
+              justify-content: center;
+              gap: 0.16cm;
             }
 
             .rule-item {
               display: flex;
-              gap: 4px;
+              gap: 5px;
               align-items: flex-start;
             }
 
             .rule-num {
               background-color: var(--primary);
               color: white;
-              font-size: 4px;
+              font-size: 6.5px;
               font-weight: 900;
-              width: 7px;
-              height: 7px;
+              width: 11px;
+              height: 11px;
               border-radius: 50%;
               display: flex;
               align-items: center;
@@ -1382,15 +1446,16 @@ export default function StudentList({
 
             .rule-text {
               margin: 0;
-              font-size: 4.8px;
-              color: #4b5563;
-              line-height: 1.35;
+              font-size: 7.2px;
+              font-weight: 600;
+              color: #1f2937;
+              line-height: 1.38;
               text-align: left;
             }
 
             .back-footer-credit {
               border-top: 0.5px solid #e5e7eb;
-              padding-top: 0.15cm;
+              padding-top: 0.12cm;
               display: flex;
               flex-direction: column;
               align-items: center;
@@ -1399,7 +1464,7 @@ export default function StudentList({
 
             .credit-barcode {
               width: 100%;
-              height: 0.45cm;
+              height: 0.38cm;
               background: linear-gradient(to right, 
                 #111 0%, #111 2%, transparent 2%, transparent 4%,
                 #111 4%, #111 8%, transparent 8%, transparent 9%,
@@ -1423,9 +1488,9 @@ export default function StudentList({
             }
 
             .credit-text-label {
-              font-size: 3.8px;
-              font-weight: 700;
-              color: #9ca3af;
+              font-size: 5px;
+              font-weight: 800;
+              color: #4b5563;
               letter-spacing: 0.2px;
             }
 
@@ -1495,8 +1560,8 @@ export default function StudentList({
             }
 
             .landscape-avatar {
-              width: 1.6cm;
-              height: 1.6cm;
+              width: 1.35cm;
+              height: 1.8cm;
               margin-bottom: 0;
             }
 
@@ -1577,14 +1642,36 @@ export default function StudentList({
               flex-direction: column;
               align-items: center;
               position: relative;
+              padding-bottom: 0.1cm;
             }
 
             .landscape-signature-section .signature-display {
-              height: 0.55cm;
+              height: 0.7cm;
               width: 100%;
               display: flex;
               justify-content: center;
               align-items: center;
+            }
+
+            .id-card-landscape .sig-img {
+              max-height: 28px;
+              max-width: 78px;
+            }
+
+            .id-card-landscape .stamp-img {
+              width: 28px;
+              height: 28px;
+              transform: translate(-36px, -50%) rotate(-12deg);
+            }
+
+            .id-card-landscape .sig-path {
+              width: 68px;
+              height: 26px;
+            }
+
+            .id-card-landscape .stamp-svg {
+              width: 36px;
+              height: 36px;
             }
 
             /* LANDSCAPE BACK CARD */
@@ -1598,15 +1685,26 @@ export default function StudentList({
             }
 
             .landscape-rules {
-              margin-top: 0.15cm;
+              margin-top: 0.12cm;
               display: grid;
               grid-template-columns: 1fr 1fr;
-              gap: 0.15cm 0.25cm;
+              gap: 0.12cm 0.22cm;
+            }
+
+            .id-card-landscape.back .rule-text {
+              font-size: 6.3px;
+              line-height: 1.32;
+            }
+
+            .id-card-landscape.back .rule-num {
+              width: 10px;
+              height: 10px;
+              font-size: 6px;
             }
 
             .landscape-back-foot {
-              margin-top: 0.1cm;
-              padding-top: 0.1cm;
+              margin-top: 0.08cm;
+              padding-top: 0.08cm;
             }
 
             /* CUT LINES */
@@ -1737,8 +1835,9 @@ export default function StudentList({
                     const imgDataBack = canvasBack.toDataURL('image/png').split(',')[1];
                     zip.file(\`ID_\${safeNis}_\${safeName}_Bagian_Belakang.png\`, imgDataBack, {base64: true});
                   } else {
-                    // Fallback jika tidak menemukan front/back
-                    const canvas = await html2canvas(wrapper, canvasOptions);
+                    // Jika satu sisi (hanya depan)
+                    const targetEl = frontCard || wrapper.querySelector('.id-card') || wrapper;
+                    const canvas = await html2canvas(targetEl, canvasOptions);
                     const imgData = canvas.toDataURL('image/png').split(',')[1];
                     zip.file(\`ID_\${safeNis}_\${safeName}.png\`, imgData, {base64: true});
                   }
@@ -1758,29 +1857,7 @@ export default function StudentList({
               }
             }
 
-            window.onload = function() {
-              const students = ${JSON.stringify(targetStudents)};
-              students.forEach(s => {
-                const barcodeContainer = document.getElementById('barcode-' + s.id);
-                if (barcodeContainer) {
-                  const barcodeSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-                  barcodeSvg.setAttribute("width", "100%");
-                  barcodeSvg.setAttribute("height", "100%");
-                  barcodeSvg.style.display = "block";
-                  barcodeContainer.appendChild(barcodeSvg);
-                  
-                  JsBarcode(barcodeSvg, s.nis || s.id, {
-                    format: "CODE128",
-                    width: 2,
-                    height: 40,
-                    displayValue: false,
-                    margin: 0,
-                    background: "transparent",
-                    lineColor: "#1e293b"
-                  });
-                }
-              });
-            }
+            // Barcode SVG sudah dirender inline sehingga siap dicetak dan diunduh seketika tanpa delay
           </script>
         </body>
       </html>
@@ -2764,8 +2841,8 @@ export default function StudentList({
                           <ShieldCheck className="h-4 w-4 text-amber-400 shrink-0" />
                         </div>
                         <div className="flex flex-col justify-center overflow-hidden leading-tight">
-                          <span className="text-[7.5px] font-black uppercase tracking-wide truncate max-w-[140px]">{schoolName}</span>
-                          <span className="text-[5.5px] font-semibold text-amber-300">KARTU IDENTITAS SISWA</span>
+                          <span className="text-[9px] font-black uppercase tracking-wide truncate max-w-[150px]">{schoolName}</span>
+                          <span className="text-[6.5px] font-bold text-amber-300">KARTU IDENTITAS SISWA</span>
                         </div>
                       </div>
 
@@ -2775,10 +2852,10 @@ export default function StudentList({
                       {/* Card Content Grid */}
                       {idCardLayout === 'portrait' ? (
                         /* PORTRAIT LAYOUT CONTENT */
-                        <div className="flex-1 flex flex-col items-center p-3 justify-between bg-radial from-slate-50 to-white">
-                          {/* Avatar Outline */}
+                        <div className="flex-1 flex flex-col items-center px-2.5 py-2 justify-between bg-radial from-slate-50 to-white">
+                          {/* Avatar Outline (3x4 Ratio) */}
                           {idCardConfig.visibility.photo && (
-                            <div className={`h-[72px] w-[72px] rounded-lg border-2 p-0.5 overflow-hidden shadow-xs bg-white relative z-10 ${
+                            <div className={`w-[66px] h-[88px] rounded-lg border-2 p-0.5 overflow-hidden shadow-xs bg-white relative z-10 shrink-0 ${
                               idCardTheme === 'navy' ? 'border-blue-700' :
                               idCardTheme === 'crimson' ? 'border-rose-700' :
                               idCardTheme === 'emerald' ? 'border-emerald-700' :
@@ -2810,65 +2887,62 @@ export default function StudentList({
 
                           {/* Student Identifiers */}
                           <div className="text-center w-full relative z-10">
-                            <h4 className="font-extrabold text-[10px] text-gray-900 uppercase tracking-tight truncate leading-tight">{viewingIdCardStudent.name}</h4>
+                            <h4 className="font-black text-[12px] text-gray-950 uppercase tracking-tight truncate leading-tight">{viewingIdCardStudent.name}</h4>
                             {idCardConfig.visibility.nis && (
-                              <span className="text-[7.5px] font-mono text-gray-500 font-semibold">NISN: {viewingIdCardStudent.nis}</span>
+                              <span className="text-[9px] font-mono text-gray-600 font-bold tracking-wide">NISN: {viewingIdCardStudent.nis}</span>
                             )}
                           </div>
 
                           {/* Metadata Table */}
-                          <div className="w-full bg-slate-50 p-1.5 rounded-lg border border-slate-100 flex flex-col gap-1 text-[6.5px] relative z-10">
-                            <div className="flex justify-between border-b border-gray-100 pb-0.5">
-                              <span className="text-gray-400 font-bold uppercase">KELAS</span>
-                              <span className="text-gray-700 font-extrabold">{viewingIdCardStudent.className}</span>
+                          <div className="w-full bg-slate-50 p-2 rounded-lg border border-slate-200 flex flex-col gap-1 text-[7.5px] relative z-10">
+                            <div className="flex justify-between border-b border-gray-150 pb-0.5">
+                              <span className="text-gray-500 font-extrabold uppercase">KELAS</span>
+                              <span className="text-gray-900 font-black">{viewingIdCardStudent.className}</span>
                             </div>
-                            <div className="flex justify-between border-b border-gray-100 pb-0.5">
-                              <span className="text-gray-400 font-bold uppercase">GENDER</span>
-                              <span className="text-gray-700 font-extrabold">{viewingIdCardStudent.gender === 'L' ? 'Laki-laki' : 'Perempuan'}</span>
+                            <div className="flex justify-between border-b border-gray-150 pb-0.5">
+                              <span className="text-gray-500 font-extrabold uppercase">GENDER</span>
+                              <span className="text-gray-900 font-black">{viewingIdCardStudent.gender === 'L' ? 'Laki-laki' : 'Perempuan'}</span>
                             </div>
                             <div className="flex justify-between">
-                              <span className="text-gray-400 font-bold uppercase">STATUS</span>
-                              <span className="text-emerald-600 font-extrabold">AKTIF</span>
+                              <span className="text-gray-500 font-extrabold uppercase">STATUS</span>
+                              <span className="text-emerald-600 font-black">SISWA AKTIF</span>
                             </div>
                           </div>
 
                           {/* Linear Barcode (Barcode Batang) */}
                           {idCardConfig.visibility.barcode && (
-                            <div className="w-full bg-white border border-gray-150 rounded-lg p-1.5 flex flex-col items-center justify-center my-1.5 shadow-3xs relative z-10">
-                              <div className="w-full h-[24px] text-slate-800">
+                            <div className="w-full bg-white border border-gray-200 rounded-lg p-1.5 flex flex-col items-center justify-center my-1 shadow-3xs relative z-10">
+                              <div className="w-full h-[26px] text-slate-800">
                                 <Barcode value={viewingIdCardStudent.nis || viewingIdCardStudent.id} />
                               </div>
-                              <span className="text-[5.5px] font-mono text-gray-400 font-extrabold tracking-widest mt-0.5 uppercase">
-                                * {viewingIdCardStudent.nis || viewingIdCardStudent.id} *
-                              </span>
                             </div>
                           )}
 
                           {/* Footer details row */}
-                          <div className="w-full flex flex-col items-center justify-center border-t border-slate-100 pt-1 h-[68px] text-center relative z-10">
-                            <span className="bg-emerald-500 text-white text-[4px] font-extrabold px-1 py-0.5 rounded-sm absolute top-1 right-2">{academicYear}</span>
-                            <span className="text-[4.5px] font-bold text-gray-400 leading-none mt-1">Kepala Sekolah,</span>
+                          <div className="w-full flex flex-col items-center justify-between border-t border-slate-150 pt-1 pb-2.5 h-[64px] text-center relative z-10">
+                            <span className="bg-emerald-500 text-white text-[5px] font-extrabold px-1.5 py-0.5 rounded-xs absolute top-1 right-1 z-30">{academicYear}</span>
+                            <span className="text-[5.5px] font-bold text-gray-500 leading-none relative z-30">Kepala Sekolah,</span>
                             
                             {idCardConfig.visibility.signature && (
-                              <div className="relative w-full h-[22px] flex justify-center items-center">
+                              <div className="relative w-full h-[30px] flex justify-center items-center">
                                 {signatureImage ? (
-                                  <img src={signatureImage} className="h-full max-w-[60px] object-contain z-10 absolute" alt="Tanda Tangan" />
+                                  <img src={signatureImage} className="max-h-[30px] max-w-[90px] object-contain z-10 translate-x-1" alt="Tanda Tangan" />
                                 ) : (
                                   /* Vector Stamp/Signature layer */
-                                  <svg viewBox="0 0 100 40" className="h-full absolute opacity-80" style={{ color: idCardTheme === 'navy' ? '#2563eb' : idCardTheme === 'crimson' ? '#be123c' : idCardTheme === 'emerald' ? '#047857' : '#b45309' }}>
+                                  <svg viewBox="0 0 100 40" className="h-[28px] opacity-80" style={{ color: idCardTheme === 'navy' ? '#2563eb' : idCardTheme === 'crimson' ? '#be123c' : idCardTheme === 'emerald' ? '#047857' : '#b45309' }}>
                                     <path d="M10 25 C 18 12, 28 8, 38 18 C 45 25, 42 6, 52 14 C 60 22, 68 25, 82 18 C 88 16, 76 32, 92 25" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
                                   </svg>
                                 )}
                                 {stampImage ? (
-                                  <img src={stampImage} className="absolute h-[32px] w-[32px] object-contain opacity-65 pointer-events-none -translate-x-6 z-20" alt="Stempel" />
+                                  <img src={stampImage} className="absolute h-[30px] w-[30px] object-contain opacity-65 pointer-events-none left-1/2 -translate-x-[40px] -rotate-12 z-20" alt="Stempel" />
                                 ) : (
-                                  <div className="absolute opacity-30 scale-60" style={{ color: idCardTheme === 'navy' ? '#2563eb' : idCardTheme === 'crimson' ? '#be123c' : idCardTheme === 'emerald' ? '#047857' : '#b45309' }}>
+                                  <div className="absolute opacity-30 scale-75 left-1/2 -translate-x-[34px]" style={{ color: idCardTheme === 'navy' ? '#2563eb' : idCardTheme === 'crimson' ? '#be123c' : idCardTheme === 'emerald' ? '#047857' : '#b45309' }}>
                                     <ShieldCheck className="h-8 w-8" />
                                   </div>
                                 )}
                               </div>
                             )}
-                            <span className="text-[5px] font-black text-gray-800 underline leading-none mb-1 z-20" style={{ marginTop: '-1.5px' }}>{idCardConfig.visibility.signature ? headmasterName : ''}</span>
+                            <span className="text-[6.5px] font-black text-gray-900 underline leading-none z-30 relative">{idCardConfig.visibility.signature ? headmasterName : ''}</span>
                           </div>
                         </div>
                       ) : (
@@ -2877,7 +2951,7 @@ export default function StudentList({
                           {/* Left layout col */}
                           <div className="w-[65px] flex flex-col justify-between items-center border-r border-slate-100 pr-2">
                             {idCardConfig.visibility.photo ? (
-                              <div className={`h-[56px] w-[56px] rounded-lg border p-0.5 overflow-hidden shadow-3xs bg-white ${
+                              <div className={`w-[48px] h-[64px] shrink-0 rounded-lg border p-0.5 overflow-hidden shadow-3xs bg-white ${
                                 idCardTheme === 'navy' ? 'border-blue-700' :
                                 idCardTheme === 'crimson' ? 'border-rose-700' :
                                 idCardTheme === 'emerald' ? 'border-emerald-700' :
@@ -2900,7 +2974,7 @@ export default function StudentList({
                                 )}
                               </div>
                             ) : (
-                              <div className="h-[56px] w-[56px]"></div>
+                              <div className="w-[48px] h-[64px] shrink-0"></div>
                             )}
                             
                             {idCardConfig.visibility.barcode && (
@@ -2908,9 +2982,6 @@ export default function StudentList({
                                 <div className="w-[45px] h-[18px]">
                                   <Barcode value={viewingIdCardStudent.nis || viewingIdCardStudent.id} />
                                 </div>
-                                <span className="text-[4px] font-mono text-gray-400 font-extrabold mt-0.5 uppercase tracking-wider text-center">
-                                  {viewingIdCardStudent.nis || viewingIdCardStudent.id}
-                                </span>
                               </div>
                             )}
                           </div>
@@ -2931,25 +3002,25 @@ export default function StudentList({
                             </div>
 
                             {/* Signatures */}
-                            <div className="flex items-end justify-between relative pt-1">
+                            <div className="flex items-end justify-between relative pt-1 pb-1">
                               <span className="text-[4px] font-extrabold text-white bg-emerald-500 px-1 py-0.5 rounded-xs">{academicYear}</span>
                               
                               {idCardConfig.visibility.signature && (
                                 <div className="flex flex-col items-end leading-none">
-                                  <span className="text-[4.5px] font-bold text-gray-400 mb-0.5">Kepala Sekolah,</span>
-                                  <div className="relative w-[70px] h-[16px] flex justify-end items-center mb-0.5">
+                                  <span className="text-[5px] font-bold text-gray-500 mb-0.5 relative z-30">Kepala Sekolah,</span>
+                                  <div className="relative w-[95px] h-[24px] flex justify-end items-center mb-0.5">
                                     {signatureImage ? (
-                                      <img src={signatureImage} className="h-[22px] max-w-[50px] object-contain z-10 absolute right-1" alt="Tanda Tangan" />
+                                      <img src={signatureImage} className="max-h-[24px] max-w-[74px] object-contain z-10 absolute right-1" alt="Tanda Tangan" />
                                     ) : (
-                                      <svg viewBox="0 0 100 40" className="h-[22px] absolute right-0 opacity-80" style={{ color: idCardTheme === 'navy' ? '#2563eb' : idCardTheme === 'crimson' ? '#be123c' : idCardTheme === 'emerald' ? '#047857' : '#b45309' }}>
+                                      <svg viewBox="0 0 100 40" className="h-[24px] absolute right-0 opacity-80" style={{ color: idCardTheme === 'navy' ? '#2563eb' : idCardTheme === 'crimson' ? '#be123c' : idCardTheme === 'emerald' ? '#047857' : '#b45309' }}>
                                         <path d="M10 25 C 18 12, 28 8, 38 18 C 45 25, 42 6, 52 14 C 60 22, 68 25, 82 18 C 88 16, 76 32, 92 25" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
                                       </svg>
                                     )}
                                     {stampImage ? (
-                                      <img src={stampImage} className="absolute h-[24px] w-[24px] object-contain opacity-65 pointer-events-none right-11 z-20" alt="Stempel" />
+                                      <img src={stampImage} className="absolute h-[24px] w-[24px] object-contain opacity-65 pointer-events-none right-12 -rotate-12 z-20" alt="Stempel" />
                                     ) : null}
                                   </div>
-                                  <span className="text-[5px] font-black text-gray-800 underline z-20" style={{ marginTop: '-2px' }}>{headmasterName}</span>
+                                  <span className="text-[5.5px] font-black text-gray-900 underline z-30 relative leading-none">{headmasterName}</span>
                                 </div>
                               )}
                             </div>
@@ -2978,45 +3049,51 @@ export default function StudentList({
                           <img src={idCardConfig.bgBack} className="absolute inset-0 w-full h-full object-cover opacity-15 z-0" alt="Background Back" />
                         )}
                         {/* Header banner */}
-                        <div className={`relative z-10 p-1 rounded flex items-center justify-center gap-1.5 ${
+                        <div className={`relative z-10 p-1.5 rounded flex items-center justify-center gap-1.5 ${
                           idCardTheme === 'navy' ? 'bg-indigo-900' :
                           idCardTheme === 'crimson' ? 'bg-rose-900' :
                           idCardTheme === 'emerald' ? 'bg-emerald-900' :
                           'bg-amber-900'
-                        } text-white font-extrabold text-[6px] uppercase tracking-wider`}>
-                          <BookOpen className="h-2.5 w-2.5 text-amber-300" />
+                        } text-white font-extrabold text-[7.5px] uppercase tracking-wider`}>
+                          <BookOpen className="h-3 w-3 text-amber-300 shrink-0" />
                           <span>Ketentuan Kartu Siswa</span>
                         </div>
 
                         {/* Rules */}
-                        <div className={`relative z-10 flex flex-col gap-1.5 ${idCardLayout === 'portrait' ? 'my-2' : 'grid grid-cols-2 gap-2 my-1'}`}>
-                          <div className="flex gap-1 items-start text-[5px] text-gray-600 leading-normal">
-                            <span className="h-3 w-3 rounded-full bg-slate-100 flex items-center justify-center font-bold shrink-0 text-slate-500">1</span>
-                            <p>Kartu ini adalah identitas resmi di lingkungan sekolah.</p>
+                        <div className={`relative z-10 flex flex-col ${idCardLayout === 'portrait' ? 'gap-2 my-auto py-1' : 'grid grid-cols-2 gap-2 my-auto'}`}>
+                          <div className={`flex gap-1.5 items-start ${idCardLayout === 'portrait' ? 'text-[7.2px]' : 'text-[6.3px]'} font-semibold text-gray-800 leading-snug`}>
+                            <span className="h-3 w-3 rounded-full bg-slate-800 flex items-center justify-center font-black shrink-0 text-white text-[6.5px] mt-0.5">1</span>
+                            <p>Kartu ini adalah tanda pengenal resmi siswa di lingkungan <strong>{schoolName}</strong>.</p>
                           </div>
-                          <div className="flex gap-1 items-start text-[5px] text-gray-600 leading-normal">
-                            <span className="h-3 w-3 rounded-full bg-slate-100 flex items-center justify-center font-bold shrink-0 text-slate-500">2</span>
-                            <p>Wajib dibawa setiap hari untuk absen tap mandiri.</p>
+                          <div className={`flex gap-1.5 items-start ${idCardLayout === 'portrait' ? 'text-[7.2px]' : 'text-[6.3px]'} font-semibold text-gray-800 leading-snug`}>
+                            <span className="h-3 w-3 rounded-full bg-slate-800 flex items-center justify-center font-black shrink-0 text-white text-[6.5px] mt-0.5">2</span>
+                            <p>Wajib dibawa setiap hari sekolah untuk pencatatan absensi digital.</p>
                           </div>
-                          <div className="flex gap-1 items-start text-[5px] text-gray-600 leading-normal">
-                            <span className="h-3 w-3 rounded-full bg-slate-100 flex items-center justify-center font-bold shrink-0 text-slate-500">3</span>
-                            <p>Jangan mencoret-coret, melipat, atau membagikan ke orang lain.</p>
+                          <div className={`flex gap-1.5 items-start ${idCardLayout === 'portrait' ? 'text-[7.2px]' : 'text-[6.3px]'} font-semibold text-gray-800 leading-snug`}>
+                            <span className="h-3 w-3 rounded-full bg-slate-800 flex items-center justify-center font-black shrink-0 text-white text-[6.5px] mt-0.5">3</span>
+                            <p>Dilarang merusak, memodifikasi, mencoret, atau meminjamkan kartu.</p>
                           </div>
-                          <div className="flex gap-1 items-start text-[5px] text-gray-600 leading-normal">
-                            <span className="h-3 w-3 rounded-full bg-slate-100 flex items-center justify-center font-bold shrink-0 text-slate-500">4</span>
-                            <p>Jika kartu hilang, harap hubungi Tata Usaha sekolah.</p>
+                          <div className={`flex gap-1.5 items-start ${idCardLayout === 'portrait' ? 'text-[7.2px]' : 'text-[6.3px]'} font-semibold text-gray-800 leading-snug`}>
+                            <span className="h-3 w-3 rounded-full bg-slate-800 flex items-center justify-center font-black shrink-0 text-white text-[6.5px] mt-0.5">4</span>
+                            <p>Jika kartu rusak atau hilang, segera hubungi Tata Usaha untuk cetak ulang.</p>
                           </div>
+                          {idCardLayout === 'portrait' && (
+                            <div className="flex gap-1.5 items-start text-[7.2px] font-semibold text-gray-800 leading-snug">
+                              <span className="h-3 w-3 rounded-full bg-slate-800 flex items-center justify-center font-black shrink-0 text-white text-[6.5px] mt-0.5">5</span>
+                              <p>Jika menemukan kartu tercecer, mohon kembalikan ke kantor sekolah.</p>
+                            </div>
+                          )}
                         </div>
 
                         {/* Barcode & label */}
-                        <div className="relative z-10 border-t border-slate-100 pt-2 flex flex-col items-center gap-1">
-                          <div className="w-full h-[15px] bg-linear-to-r from-neutral-800 from-5% to-white to-5% flex items-center justify-center" 
+                        <div className="relative z-10 border-t border-slate-100 pt-1.5 flex flex-col items-center gap-1">
+                          <div className="w-full h-[14px] bg-linear-to-r from-neutral-800 from-5% to-white to-5% flex items-center justify-center" 
                                style={{
                                  background: 'linear-gradient(90deg, #111 2%, #fff 2%, #fff 4%, #111 4%, #111 8%, #fff 8%, #111 11%, #fff 11%, #111 15%, #fff 15%, #111 22%, #fff 22%, #111 26%, #fff 26%, #111 31%, #fff 31%, #111 38%, #fff 38%, #111 42%, #fff 42%, #111 48%, #fff 48%, #111 51%, #fff 51%, #111 58%, #fff 58%, #111 63%, #fff 63%, #111 70%, #fff 70%, #111 72%, #fff 72%, #111 78%, #fff 78%, #111 82%, #fff 82%, #111 88%, #fff 88%, #111 94%, #fff 94%, #111 100%)',
                                  opacity: 0.7
                                }}
                           />
-                          <span className="text-[4px] font-extrabold text-gray-400 uppercase tracking-widest leading-none">ABSENSI DIGITAL QR INDONESIA</span>
+                          <span className="text-[5px] font-extrabold text-gray-600 uppercase tracking-widest leading-none">ABSENSI DIGITAL QR INDONESIA</span>
                         </div>
                       </div>
                     </div>
