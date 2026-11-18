@@ -15,6 +15,7 @@ import {
 } from '../lib/storage';
 import JSZip from 'jszip';
 import { toPng } from 'html-to-image';
+import html2canvas from 'html2canvas-pro';
 
 
 // Simple and high-fidelity Code 39 barcode SVG generator for offline rendering
@@ -139,6 +140,15 @@ const AVATAR_FEMALE_SVG = `
   </svg>
 `;
 
+function escapeHtml(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function sanitizeFilenamePart(value: string, fallback: string): string {
   const cleaned = String(value || '')
     .trim()
@@ -149,7 +159,7 @@ function sanitizeFilenamePart(value: string, fallback: string): string {
 
 async function inlineImageToDataUrl(src: string): Promise<string | null> {
   if (!src) return null;
-  if (src.startsWith('data:') || src.startsWith('blob:')) return src;
+  if (src.startsWith('data:')) return src;
 
   try {
     const response = await fetch(src, { mode: 'cors' });
@@ -194,6 +204,39 @@ async function inlineImageToDataUrl(src: string): Promise<string | null> {
     };
     img.src = src;
   });
+}
+
+function cropAvatarImageCover(img: HTMLImageElement): string | null {
+  try {
+    const nw = img.naturalWidth;
+    const nh = img.naturalHeight;
+    if (!nw || !nh) return null;
+
+    const targetRatio = 3 / 4;
+    const srcRatio = nw / nh;
+    let sx = 0;
+    let sy = 0;
+    let sw = nw;
+    let sh = nh;
+
+    if (srcRatio > targetRatio) {
+      sw = nh * targetRatio;
+      sx = (nw - sw) / 2;
+    } else if (srcRatio < targetRatio) {
+      sh = nw / targetRatio;
+      sy = 0; // object-position: center top
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 450;
+    canvas.height = 600;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL('image/jpeg', 0.92);
+  } catch {
+    return null;
+  }
 }
 
 async function prepareElementImagesForCapture(container: HTMLElement, gender: 'L' | 'P'): Promise<void> {
@@ -250,6 +293,13 @@ async function prepareElementImagesForCapture(container: HTMLElement, gender: 'L
         return;
       }
 
+      if (img.classList.contains('avatar-image')) {
+        const cropped = cropAvatarImageCover(img);
+        if (cropped) {
+          img.setAttribute('src', cropped);
+        }
+      }
+
       if (typeof img.decode === 'function') {
         await img.decode().catch(() => {});
       }
@@ -257,16 +307,75 @@ async function prepareElementImagesForCapture(container: HTMLElement, gender: 'L
   );
 }
 
-function triggerBlobDownload(blob: Blob, filename: string, targetDoc: Document = document): void {
-  const url = URL.createObjectURL(blob);
+async function captureCardToBase64Png(el: HTMLElement): Promise<string> {
+  // When opener tab is backgrounded (e.g. popup printWindow is active),
+  // browser throttles requestAnimationFrame used inside html-to-image, so use html2canvas-pro directly.
+  if (!document.hidden) {
+    try {
+      const toPngPromise = toPng(el, {
+        pixelRatio: 3,
+        backgroundColor: '#ffffff',
+        skipFonts: true,
+        cacheBust: false,
+        style: {
+          margin: '0',
+          boxShadow: 'none'
+        }
+      });
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        window.setTimeout(() => reject(new Error('toPng timeout')), 5000)
+      );
+      const dataUrl = await Promise.race([toPngPromise, timeoutPromise]);
+      const base64 = dataUrl.split(',')[1];
+      if (base64 && base64.length > 100) {
+        return base64;
+      }
+    } catch (primaryErr) {
+      console.warn('Primary toPng render failed, falling back to html2canvas-pro:', primaryErr);
+    }
+  }
+
+  const canvas = await html2canvas(el, {
+    scale: 3,
+    useCORS: true,
+    allowTaint: false,
+    backgroundColor: '#ffffff',
+    logging: false
+  });
+  const fallbackDataUrl = canvas.toDataURL('image/png');
+  const fallbackBase64 = fallbackDataUrl.split(',')[1];
+  if (!fallbackBase64) {
+    throw new Error('Gagal mengonversi tampilan kartu menjadi gambar PNG.');
+  }
+  return fallbackBase64;
+}
+
+interface ZipDownloadResult {
+  url: string;
+  filename: string;
+  sizeKb: number;
+}
+
+function triggerBlobDownload(blob: Blob, filename: string, targetDoc: Document = document): ZipDownloadResult {
+  const targetWin = targetDoc.defaultView || window;
+  const url = targetWin.URL.createObjectURL(blob);
   const link = targetDoc.createElement('a');
   link.href = url;
   link.download = filename;
+  link.rel = 'noopener noreferrer';
   link.style.display = 'none';
   targetDoc.body.appendChild(link);
   link.click();
-  targetDoc.body.removeChild(link);
-  window.setTimeout(() => URL.revokeObjectURL(url), 10000);
+  targetWin.setTimeout(() => {
+    if (link.parentNode) {
+      link.parentNode.removeChild(link);
+    }
+  }, 1500);
+  return {
+    url,
+    filename,
+    sizeKb: Math.max(1, Math.round(blob.size / 1024))
+  };
 }
 
 interface StudentListProps {
@@ -318,6 +427,7 @@ export default function StudentList({
   const [zipProgress, setZipProgress] = useState(0);
   const [zipStatusText, setZipStatusText] = useState('');
   const [zipError, setZipError] = useState('');
+  const [zipReadyDownload, setZipReadyDownload] = useState<ZipDownloadResult | null>(null);
 
   useEffect(() => {
     safeLocalStorageSet('absensi_code_type', codeType);
@@ -1045,7 +1155,7 @@ export default function StudentList({
     }
   };
 
-  const getIdCardStyles = (rootSelector: string = ':root'): string => `
+  const getCardComponentStyles = (rootSelector: string = ':root'): string => `
             ${rootSelector} {
               --primary: #1e3a8a;
               --primary-rgb: 30, 58, 138;
@@ -1081,64 +1191,6 @@ export default function StudentList({
               --secondary: #d97706;
               --accent: #f59e0b;
               --gradient: linear-gradient(135deg, #111115 0%, #451a03 100%);
-            }
-
-            body {
-              font-family: 'Inter', sans-serif;
-              background-color: #f3f4f6;
-              margin: 0;
-              padding: 20px;
-              display: flex;
-              flex-direction: column;
-              align-items: center;
-              -webkit-print-color-adjust: exact;
-              print-color-adjust: exact;
-            }
-
-            .print-controls {
-              background-color: white;
-              padding: 15px 30px;
-              border-radius: 12px;
-              box-shadow: 0 4px 10px rgba(0,0,0,0.05);
-              margin-bottom: 25px;
-              display: flex;
-              align-items: center;
-              gap: 15px;
-              border: 1px solid #e5e7eb;
-            }
-
-            .print-btn {
-              background-color: #7c3aed;
-              color: white;
-              border: none;
-              padding: 8px 18px;
-              font-weight: bold;
-              font-size: 13px;
-              border-radius: 8px;
-              cursor: pointer;
-              transition: all 150ms;
-            }
-            .print-btn:hover {
-              background-color: #6d28d9;
-            }
-            
-            .close-btn {
-              background-color: #e5e7eb;
-              color: #4b5563;
-              border: none;
-              padding: 8px 18px;
-              font-weight: bold;
-              font-size: 13px;
-              border-radius: 8px;
-              cursor: pointer;
-            }
-
-            .cards-container {
-              display: flex;
-              flex-direction: column;
-              gap: 30px;
-              align-items: center;
-              width: 100%;
             }
 
             .card-pair-wrapper {
@@ -1896,13 +1948,75 @@ export default function StudentList({
             }
   `;
 
+  const getPrintPageStyles = (): string => `
+            body {
+              font-family: 'Inter', system-ui, -apple-system, sans-serif;
+              background-color: #f3f4f6;
+              margin: 0;
+              padding: 20px;
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+            }
+
+            .print-controls {
+              background-color: white;
+              padding: 15px 30px;
+              border-radius: 12px;
+              box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+              margin-bottom: 25px;
+              display: flex;
+              align-items: center;
+              gap: 15px;
+              border: 1px solid #e5e7eb;
+            }
+
+            .print-btn {
+              background-color: #7c3aed;
+              color: white;
+              border: none;
+              padding: 8px 18px;
+              font-weight: bold;
+              font-size: 13px;
+              border-radius: 8px;
+              cursor: pointer;
+              transition: all 150ms;
+            }
+            .print-btn:hover {
+              background-color: #6d28d9;
+            }
+
+            .close-btn {
+              background-color: #e5e7eb;
+              color: #4b5563;
+              border: none;
+              padding: 8px 18px;
+              font-weight: bold;
+              font-size: 13px;
+              border-radius: 8px;
+              cursor: pointer;
+            }
+
+            .cards-container {
+              display: flex;
+              flex-direction: column;
+              gap: 30px;
+              align-items: center;
+              width: 100%;
+            }
+
+            ${getCardComponentStyles(':root')}
+  `;
+
   const exportIdCardsToZip = async (
     targetStudents: Student[],
     classNameTitle: string = 'Semua',
     onProgress?: (pct: number) => void,
     onStatus?: (label: string) => void,
     downloadDoc: Document = document
-  ) => {
+  ): Promise<ZipDownloadResult> => {
     if (!targetStudents.length) {
       throw new Error('Tidak ada data siswa untuk diekspor.');
     }
@@ -1910,11 +2024,11 @@ export default function StudentList({
     const stage = document.createElement('div');
     stage.className = `id-card-export-stage theme-${idCardTheme}`;
     stage.style.cssText =
-      'position:fixed;left:-99999px;top:0;width:1200px;pointer-events:none;z-index:-1;background:#ffffff;font-family:"Inter",system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;';
+      'position:fixed;left:-9999px;top:0;width:1200px;pointer-events:none;z-index:-1;background:#ffffff;font-family:"Inter",system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;';
 
     const styleEl = document.createElement('style');
     styleEl.textContent = `
-      ${getIdCardStyles('.id-card-export-stage')}
+      ${getCardComponentStyles('.id-card-export-stage')}
       :where(.id-card-export-stage) {
         line-height: normal;
         color: #0f172a;
@@ -1951,33 +2065,16 @@ export default function StudentList({
         const frontCard = wrapper.querySelector('.front') as HTMLElement | null;
         const backCard = wrapper.querySelector('.back') as HTMLElement | null;
 
-        const captureOptions = {
-          pixelRatio: 3,
-          backgroundColor: '#ffffff',
-          skipFonts: true,
-          cacheBust: false,
-          style: {
-            margin: '0',
-            boxShadow: 'none'
-          }
-        };
-
         if (frontCard && backCard) {
-          const frontDataUrl = await toPng(frontCard, captureOptions);
-          const frontBase64 = frontDataUrl.split(',')[1];
-          if (!frontBase64) throw new Error(`Gagal merender bagian depan kartu ${student.name}.`);
+          const frontBase64 = await captureCardToBase64Png(frontCard);
           zip.file(`${baseFilename}${uniqueSuffix}_Bagian_Depan.png`, frontBase64, { base64: true });
 
-          const backDataUrl = await toPng(backCard, captureOptions);
-          const backBase64 = backDataUrl.split(',')[1];
-          if (!backBase64) throw new Error(`Gagal merender bagian belakang kartu ${student.name}.`);
+          const backBase64 = await captureCardToBase64Png(backCard);
           zip.file(`${baseFilename}${uniqueSuffix}_Bagian_Belakang.png`, backBase64, { base64: true });
         } else {
           const targetEl = (frontCard || wrapper.querySelector('.id-card') || wrapper) as HTMLElement;
-          const dataUrl = await toPng(targetEl, captureOptions);
-          const base64 = dataUrl.split(',')[1];
-          if (!base64) throw new Error(`Gagal merender kartu ${student.name}.`);
-          zip.file(`${baseFilename}${uniqueSuffix}.png`, base64, { base64: true });
+          const cardBase64 = await captureCardToBase64Png(targetEl);
+          zip.file(`${baseFilename}${uniqueSuffix}.png`, cardBase64, { base64: true });
         }
 
         const pct = Math.round(((i + 1) / total) * 100);
@@ -1988,7 +2085,7 @@ export default function StudentList({
       onStatus?.('Mengemas ZIP...');
       const zipBlob = await zip.generateAsync({ type: 'blob' });
       const safeClass = sanitizeFilenamePart(classNameTitle, 'Semua');
-      triggerBlobDownload(zipBlob, `ID_Cards_${safeClass}.zip`, downloadDoc);
+      return triggerBlobDownload(zipBlob, `ID_Cards_${safeClass}.zip`, downloadDoc);
     } finally {
       stage.remove();
     }
@@ -1996,13 +2093,17 @@ export default function StudentList({
 
   const handleDirectModalZipDownload = async (targetStudents: Student[], classNameTitle: string = 'Semua') => {
     if (isExportingZip || !targetStudents.length) return;
+    if (zipReadyDownload?.url) {
+      URL.revokeObjectURL(zipReadyDownload.url);
+    }
+    setZipReadyDownload(null);
     setZipError('');
     setIsExportingZip(true);
     setZipProgress(0);
     setZipStatusText('Memproses ZIP (0%)...');
 
     try {
-      await exportIdCardsToZip(
+      const result = await exportIdCardsToZip(
         targetStudents,
         classNameTitle,
         (pct) => {
@@ -2012,9 +2113,11 @@ export default function StudentList({
         (status) => setZipStatusText(status),
         document
       );
-    } catch (err: any) {
+      setZipReadyDownload(result);
+    } catch (err: unknown) {
       console.error('Error creating ZIP:', err);
-      setZipError(err?.message || 'Gagal membuat file ZIP. Silakan coba lagi.');
+      const msg = err instanceof Error ? err.message : String(err || 'Terjadi kesalahan saat membuat file ZIP.');
+      setZipError(msg || 'Gagal membuat file ZIP. Silakan coba lagi.');
     } finally {
       setIsExportingZip(false);
       setZipStatusText('');
@@ -2032,16 +2135,16 @@ export default function StudentList({
     printWindow.document.write(`
       <html>
         <head>
-          <title>Cetak ID Card Pelajar - ${activeClass}</title>
+          <title>Cetak ID Card Pelajar - ${escapeHtml(activeClass)}</title>
           <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
           <style>
-            ${getIdCardStyles(':root')}
+            ${getPrintPageStyles()}
           </style>
         </head>
         <body class="theme-${idCardTheme}">
           
           <div class="print-controls">
-            <span style="font-size: 13px; font-weight: bold; color: #1f2937;">Pratinjau Cetak ID Card (${targetStudents.length} Siswa, Kelas: ${classNameTitle})</span>
+            <span style="font-size: 13px; font-weight: bold; color: #1f2937;">Pratinjau Cetak ID Card (${targetStudents.length} Siswa, Kelas: ${escapeHtml(classNameTitle)})</span>
             <div style="display: flex; gap: 8px;">
               <button class="print-btn" onclick="window.print()">Cetak (Native)</button>
               <button class="print-btn" id="zip-download-btn" style="background-color: #10b981;" onclick="downloadZIP()">Unduh ZIP (Gambar)</button>
@@ -2050,6 +2153,7 @@ export default function StudentList({
           </div>
 
           <div id="zip-error-banner" style="display:none;max-width:680px;width:100%;margin-bottom:16px;padding:10px 14px;border-radius:10px;background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;font-size:12px;font-weight:600;text-align:center;"></div>
+          <div id="zip-ready-banner" style="display:none;max-width:680px;width:100%;margin-bottom:16px;padding:10px 14px;border-radius:10px;background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46;font-size:12px;font-weight:600;text-align:center;"></div>
 
           <div class="cards-container" id="pdf-content">
             ${cardsHtml}
@@ -2059,10 +2163,15 @@ export default function StudentList({
             async function downloadZIP() {
               const btn = document.getElementById('zip-download-btn');
               const errBanner = document.getElementById('zip-error-banner');
+              const readyBanner = document.getElementById('zip-ready-banner');
               const originalText = btn ? btn.innerText : 'Unduh ZIP (Gambar)';
               if (errBanner) {
                 errBanner.style.display = 'none';
                 errBanner.textContent = '';
+              }
+              if (readyBanner) {
+                readyBanner.style.display = 'none';
+                readyBanner.innerHTML = '';
               }
               if (btn) {
                 btn.innerText = 'Memproses ZIP (0%)...';
@@ -2073,7 +2182,7 @@ export default function StudentList({
                 if (typeof window.__exportZip !== 'function') {
                   throw new Error('Koneksi ke halaman utama aplikasi terputus. Silakan tutup pratinjau ini dan buka ulang dari aplikasi.');
                 }
-                await window.__exportZip(
+                const result = await window.__exportZip(
                   function(pct) {
                     if (btn) btn.innerText = 'Memproses ZIP (' + pct + '%)...';
                   },
@@ -2081,10 +2190,17 @@ export default function StudentList({
                     if (btn) btn.innerText = statusLabel;
                   }
                 );
+                if (readyBanner && result && result.url) {
+                  readyBanner.innerHTML =
+                    'File ZIP berhasil dibuat (' + result.sizeKb + ' KB). Jika unduhan tidak dimulai otomatis, klik tautan ini: ' +
+                    '<a href="' + result.url + '" download="' + result.filename + '" style="color:#047857;text-decoration:underline;font-weight:800;">Unduh ' + result.filename + '</a>';
+                  readyBanner.style.display = 'block';
+                }
               } catch (error) {
                 console.error('Error creating ZIP:', error);
                 if (errBanner) {
-                  errBanner.textContent = 'Gagal membuat file ZIP: ' + (error && error.message ? error.message : 'Terjadi kesalahan saat memproses gambar.');
+                  const errMsg = error && error.message ? error.message : String(error || 'Terjadi kesalahan saat memproses gambar.');
+                  errBanner.textContent = 'Gagal membuat file ZIP: ' + errMsg;
                   errBanner.style.display = 'block';
                 }
               } finally {
@@ -2104,7 +2220,7 @@ export default function StudentList({
       onProgress?: (pct: number) => void,
       onStatus?: (label: string) => void
     ) => {
-      await exportIdCardsToZip(targetStudents, classNameTitle, onProgress, onStatus, printWindow.document);
+      return await exportIdCardsToZip(targetStudents, classNameTitle, onProgress, onStatus, printWindow.document);
     };
   };
 
@@ -3353,10 +3469,23 @@ export default function StudentList({
                 {zipError}
               </div>
             )}
+            {zipReadyDownload && (
+              <div className="px-6 py-2.5 bg-emerald-50 border-t border-emerald-100 text-xs text-emerald-800 font-semibold flex flex-wrap items-center justify-between gap-2">
+                <span>ZIP berhasil dibuat ({zipReadyDownload.sizeKb} KB).</span>
+                <a
+                  href={zipReadyDownload.url}
+                  download={zipReadyDownload.filename}
+                  className="underline font-bold text-emerald-700 hover:text-emerald-900"
+                >
+                  Klik untuk unduh {zipReadyDownload.filename}
+                </a>
+              </div>
+            )}
             <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-end gap-3 shrink-0">
               <button
                 onClick={() => {
                   setZipError('');
+                  setZipReadyDownload(null);
                   setViewingIdCardStudent(null);
                 }}
                 className="px-4 py-2 hover:bg-gray-200 text-gray-600 font-bold rounded-xl text-xs transition-colors cursor-pointer"
@@ -3618,10 +3747,23 @@ export default function StudentList({
                 {zipError}
               </div>
             )}
+            {zipReadyDownload && (
+              <div className="px-6 py-2.5 bg-emerald-50 border-t border-emerald-100 text-xs text-emerald-800 font-semibold flex flex-wrap items-center justify-between gap-2">
+                <span>ZIP berhasil dibuat ({zipReadyDownload.sizeKb} KB).</span>
+                <a
+                  href={zipReadyDownload.url}
+                  download={zipReadyDownload.filename}
+                  className="underline font-bold text-emerald-700 hover:text-emerald-900"
+                >
+                  Klik untuk unduh {zipReadyDownload.filename}
+                </a>
+              </div>
+            )}
             <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-end gap-3">
               <button
                 onClick={() => {
                   setZipError('');
+                  setZipReadyDownload(null);
                   setIsBulkIdCardModalOpen(false);
                 }}
                 className="px-4 py-2 hover:bg-gray-200 text-gray-600 font-bold rounded-xl text-xs transition-colors cursor-pointer"
