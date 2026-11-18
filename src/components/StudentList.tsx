@@ -13,6 +13,8 @@ import {
   safeLocalStorageRemove, 
   compressImage 
 } from '../lib/storage';
+import JSZip from 'jszip';
+import { toPng } from 'html-to-image';
 
 
 // Simple and high-fidelity Code 39 barcode SVG generator for offline rendering
@@ -119,6 +121,154 @@ function renderBarcodeSvgString(value: string): string {
   return `<svg viewBox="0 0 ${binaryString.length} 40" style="width:100%;height:100%;display:block;" preserveAspectRatio="none">${rects}</svg>`;
 }
 
+const AVATAR_MALE_SVG = `
+  <svg viewBox="0 0 100 100" class="avatar-svg">
+    <rect width="100%" height="100%" fill="#eff6ff" rx="12"/>
+    <circle cx="50" cy="50" r="45" fill="none" stroke="#dbeafe" stroke-width="1.5" stroke-dasharray="2 2"/>
+    <circle cx="50" cy="38" r="16" fill="#93c5fd"/>
+    <path d="M22 80 C 22 58, 35 55, 50 55 C 65 55, 78 58, 78 80 Z" fill="#3b82f6"/>
+  </svg>
+`;
+
+const AVATAR_FEMALE_SVG = `
+  <svg viewBox="0 0 100 100" class="avatar-svg">
+    <rect width="100%" height="100%" fill="#fff1f2" rx="12"/>
+    <circle cx="50" cy="50" r="45" fill="none" stroke="#ffe4e6" stroke-width="1.5" stroke-dasharray="2 2"/>
+    <circle cx="50" cy="38" r="16" fill="#fda4af"/>
+    <path d="M24 80 C 24 58, 36 55, 50 55 C 64 55, 76 58, 76 80 Z" fill="#f43f5e"/>
+  </svg>
+`;
+
+function sanitizeFilenamePart(value: string, fallback: string): string {
+  const cleaned = String(value || '')
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return cleaned || fallback;
+}
+
+async function inlineImageToDataUrl(src: string): Promise<string | null> {
+  if (!src) return null;
+  if (src.startsWith('data:') || src.startsWith('blob:')) return src;
+
+  try {
+    const response = await fetch(src, { mode: 'cors' });
+    if (response.ok) {
+      const blob = await response.blob();
+      const dataUrl = await new Promise<string | null>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(typeof reader.result === 'string' ? reader.result : null);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(blob);
+      });
+      if (dataUrl) return dataUrl;
+    }
+  } catch {
+    // Fallback to anonymous Image + canvas below
+  }
+
+  return await new Promise<string | null>((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    const timer = window.setTimeout(() => resolve(null), 4000);
+    img.onload = () => {
+      window.clearTimeout(timer);
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth || 200;
+        canvas.height = img.naturalHeight || 200;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(null);
+          return;
+        }
+        ctx.drawImage(img, 0, 0);
+        resolve(canvas.toDataURL('image/png'));
+      } catch {
+        resolve(null);
+      }
+    };
+    img.onerror = () => {
+      window.clearTimeout(timer);
+      resolve(null);
+    };
+    img.src = src;
+  });
+}
+
+async function prepareElementImagesForCapture(container: HTMLElement, gender: 'L' | 'P'): Promise<void> {
+  const imgs = Array.from(container.querySelectorAll('img'));
+  await Promise.all(
+    imgs.map(async (img) => {
+      const src = img.getAttribute('src') || '';
+      if (!src) {
+        img.remove();
+        return;
+      }
+
+      if (!src.startsWith('data:')) {
+        const inlined = await inlineImageToDataUrl(src);
+        if (inlined) {
+          img.setAttribute('src', inlined);
+        } else if (img.classList.contains('avatar-image')) {
+          const fallbackContainer = document.createElement('div');
+          fallbackContainer.style.width = '100%';
+          fallbackContainer.style.height = '100%';
+          fallbackContainer.innerHTML = gender === 'L' ? AVATAR_MALE_SVG : AVATAR_FEMALE_SVG;
+          img.replaceWith(fallbackContainer.firstElementChild || fallbackContainer);
+          return;
+        } else {
+          img.remove();
+          return;
+        }
+      }
+
+      if (!img.complete) {
+        await new Promise<void>((resolve) => {
+          const timer = window.setTimeout(resolve, 2500);
+          img.onload = () => {
+            window.clearTimeout(timer);
+            resolve();
+          };
+          img.onerror = () => {
+            window.clearTimeout(timer);
+            resolve();
+          };
+        });
+      }
+
+      if (img.naturalWidth === 0) {
+        if (img.classList.contains('avatar-image')) {
+          const fallbackContainer = document.createElement('div');
+          fallbackContainer.style.width = '100%';
+          fallbackContainer.style.height = '100%';
+          fallbackContainer.innerHTML = gender === 'L' ? AVATAR_MALE_SVG : AVATAR_FEMALE_SVG;
+          img.replaceWith(fallbackContainer.firstElementChild || fallbackContainer);
+        } else {
+          img.remove();
+        }
+        return;
+      }
+
+      if (typeof img.decode === 'function') {
+        await img.decode().catch(() => {});
+      }
+    })
+  );
+}
+
+function triggerBlobDownload(blob: Blob, filename: string, targetDoc: Document = document): void {
+  const url = URL.createObjectURL(blob);
+  const link = targetDoc.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.style.display = 'none';
+  targetDoc.body.appendChild(link);
+  link.click();
+  targetDoc.body.removeChild(link);
+  window.setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
 interface StudentListProps {
   students: Student[];
   onAddStudent: (student: Omit<Student, 'id'>) => void;
@@ -164,6 +314,10 @@ export default function StudentList({
   const [idCardLayout, setIdCardLayout] = useState<'portrait' | 'landscape'>('portrait');
   const [includeBackCard, setIncludeBackCard] = useState(true);
   const [codeType, setCodeType] = useState<'qr' | 'barcode'>(() => (safeLocalStorageGet('absensi_code_type') as any) || 'qr');
+  const [isExportingZip, setIsExportingZip] = useState(false);
+  const [zipProgress, setZipProgress] = useState(0);
+  const [zipStatusText, setZipStatusText] = useState('');
+  const [zipError, setZipError] = useState('');
 
   useEffect(() => {
     safeLocalStorageSet('absensi_code_type', codeType);
@@ -634,137 +788,214 @@ export default function StudentList({
     printWindow.document.close();
   };
 
-  // Print high-fidelity student ID Cards
-  const handlePrintIDCardsAction = (targetStudents: Student[], classNameTitle: string = 'Semua') => {
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) return;
+  const buildStudentCardPairHtml = (s: Student): string => {
+    const avatarSvg = idCardConfig.visibility.photo ? (
+      s.photo
+        ? `<img src="${s.photo}" class="avatar-image" alt="Foto ${s.name}" />`
+        : (s.gender === 'L' ? AVATAR_MALE_SVG : AVATAR_FEMALE_SVG)
+    ) : '';
 
-    const cardsHtml = targetStudents.map(s => {
-      const avatarMaleSvg = `
-        <svg viewBox="0 0 100 100" class="avatar-svg">
-          <rect width="100%" height="100%" fill="#eff6ff" rx="12"/>
-          <circle cx="50" cy="50" r="45" fill="none" stroke="#dbeafe" stroke-width="1.5" stroke-dasharray="2 2"/>
-          <circle cx="50" cy="38" r="16" fill="#93c5fd"/>
-          <path d="M22 80 C 22 58, 35 55, 50 55 C 65 55, 78 58, 78 80 Z" fill="#3b82f6"/>
-        </svg>
-      `;
+    // Select theme color hexes
+    let strokeColor = '#1e3a8a'; // Signature stroke color
+    if (idCardTheme === 'crimson') strokeColor = '#be123c';
+    if (idCardTheme === 'emerald') strokeColor = '#047857';
+    if (idCardTheme === 'gold') strokeColor = '#b45309';
 
-      const avatarFemaleSvg = `
-        <svg viewBox="0 0 100 100" class="avatar-svg">
-          <rect width="100%" height="100%" fill="#fff1f2" rx="12"/>
-          <circle cx="50" cy="50" r="45" fill="none" stroke="#ffe4e6" stroke-width="1.5" stroke-dasharray="2 2"/>
-          <circle cx="50" cy="38" r="16" fill="#fda4af"/>
-          <path d="M24 80 C 24 58, 36 55, 50 55 C 64 55, 76 58, 76 80 Z" fill="#f43f5e"/>
-        </svg>
-      `;
+    const signatureSvg = idCardConfig.visibility.signature ? (
+      signatureImage ? `
+      <img src="${signatureImage}" class="sig-img" alt="Tanda Tangan" />
+    ` : `
+      <svg viewBox="0 0 100 40" class="sig-path" style="opacity: 0.85;">
+        <path d="M10 25 C 18 12, 28 8, 38 18 C 45 25, 42 6, 52 14 C 60 22, 68 25, 82 18 C 88 16, 76 32, 92 25" fill="none" stroke="${strokeColor}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    `) : '';
 
-      const avatarSvg = idCardConfig.visibility.photo ? (
-        s.photo 
-        ? `<img src="${s.photo}" class="avatar-image" alt="Foto ${s.name}" />` 
-        : (s.gender === 'L' ? avatarMaleSvg : avatarFemaleSvg)
-      ) : '';
+    const stampSvg = idCardConfig.visibility.signature ? (
+      stampImage ? `
+      <img src="${stampImage}" class="stamp-img" alt="Stempel" />
+    ` : `
+      <svg viewBox="0 0 100 100" class="stamp-svg" style="color: ${strokeColor};">
+        <circle cx="50" cy="50" r="44" fill="none" stroke="currentColor" stroke-width="1.8" stroke-dasharray="3 1.5"/>
+        <circle cx="50" cy="50" r="40" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <circle cx="50" cy="50" r="32" fill="none" stroke="currentColor" stroke-width="0.8"/>
+        <text x="50" y="24" text-anchor="middle" font-size="5" font-weight="900" fill="currentColor" letter-spacing="1">ABSENSI DIGITAL</text>
+        <text x="50" y="81" text-anchor="middle" font-size="5" font-weight="900" fill="currentColor" letter-spacing="1">KARTU RESMI</text>
+        <path d="M 32 50 L 68 50 M 50 32 L 50 68" stroke="currentColor" stroke-width="0.8"/>
+        <polygon points="50,42 52,48 58,49 53,53 54,59 50,56 46,59 47,53 42,49 48,48" fill="currentColor"/>
+      </svg>
+    `) : '';
 
-      // Select theme color hexes
-      let strokeColor = '#1e3a8a'; // Signature stroke color
-      if (idCardTheme === 'crimson') strokeColor = '#be123c';
-      if (idCardTheme === 'emerald') strokeColor = '#047857';
-      if (idCardTheme === 'gold') strokeColor = '#b45309';
+    const bgFrontHtml = idCardConfig.bgFront ? `
+      <img src="${idCardConfig.bgFront}" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; object-position: center top; z-index: 0; opacity: 0.25;" />
+    ` : '';
 
-      const signatureSvg = idCardConfig.visibility.signature ? (
-        signatureImage ? `
-        <img src="${signatureImage}" class="sig-img" alt="Tanda Tangan" />
-      ` : `
-        <svg viewBox="0 0 100 40" class="sig-path" style="opacity: 0.85;">
-          <path d="M10 25 C 18 12, 28 8, 38 18 C 45 25, 42 6, 52 14 C 60 22, 68 25, 82 18 C 88 16, 76 32, 92 25" fill="none" stroke="${strokeColor}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      `) : '';
+    const bgBackHtml = idCardConfig.bgBack ? `
+      <img src="${idCardConfig.bgBack}" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; object-position: center top; z-index: 0; opacity: 0.15;" />
+    ` : '';
 
-      const stampSvg = idCardConfig.visibility.signature ? (
-        stampImage ? `
-        <img src="${stampImage}" class="stamp-img" alt="Stempel" />
-      ` : `
-        <svg viewBox="0 0 100 100" class="stamp-svg" style="color: ${strokeColor};">
-          <circle cx="50" cy="50" r="44" fill="none" stroke="currentColor" stroke-width="1.8" stroke-dasharray="3 1.5"/>
-          <circle cx="50" cy="50" r="40" fill="none" stroke="currentColor" stroke-width="1.2"/>
-          <circle cx="50" cy="50" r="32" fill="none" stroke="currentColor" stroke-width="0.8"/>
-          <text x="50" y="24" text-anchor="middle" font-size="5" font-weight="900" fill="currentColor" letter-spacing="1">ABSENSI DIGITAL</text>
-          <text x="50" y="81" text-anchor="middle" font-size="5" font-weight="900" fill="currentColor" letter-spacing="1">KARTU RESMI</text>
-          <path d="M 32 50 L 68 50 M 50 32 L 50 68" stroke="currentColor" stroke-width="0.8"/>
-          <polygon points="50,42 52,48 58,49 53,53 54,59 50,56 46,59 47,53 42,49 48,48" fill="currentColor"/>
-        </svg>
-      `) : '';
+    const nisHtml = idCardConfig.visibility.nis ? `<div class="student-nis-display">NISN: ${s.nis}</div>` : '';
+    const barcodeSvgString = renderBarcodeSvgString(s.nis || s.id);
+    const barcodeHtmlPortrait = idCardConfig.visibility.barcode ? `
+      <!-- Linear Barcode Container -->
+      <div class="barcode-container" style="z-index: 10;">
+        <div class="barcode-graphic">${barcodeSvgString}</div>
+      </div>
+    ` : '';
 
-      const bgFrontHtml = idCardConfig.bgFront ? `
-        <img src="${idCardConfig.bgFront}" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; object-position: center top; z-index: 0; opacity: 0.25;" />
-      ` : '';
-
-      const bgBackHtml = idCardConfig.bgBack ? `
-        <img src="${idCardConfig.bgBack}" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; object-position: center top; z-index: 0; opacity: 0.15;" />
-      ` : '';
-
-      const nisHtml = idCardConfig.visibility.nis ? `<div class="student-nis-display">NISN: ${s.nis}</div>` : '';
-      const barcodeSvgString = renderBarcodeSvgString(s.nis || s.id);
-      const barcodeHtmlPortrait = idCardConfig.visibility.barcode ? `
-        <!-- Linear Barcode Container -->
-        <div class="barcode-container" style="z-index: 10;">
-          <div class="barcode-graphic">${barcodeSvgString}</div>
-        </div>
-      ` : '';
-
-      const nisHtmlLandscape = idCardConfig.visibility.nis ? `<div class="student-nis-display" style="font-size: 7px;">NISN: ${s.nis}</div>` : '';
-      const barcodeHtmlLandscape = idCardConfig.visibility.barcode ? `
-        <div class="landscape-barcode-box" style="z-index: 10;">
-          <div class="barcode-graphic" style="transform: scale(0.65); transform-origin: center;">${barcodeSvgString}</div>
-        </div>
-      ` : '';
-
-      if (idCardLayout === 'portrait') {
-        return `
-          <div class="card-pair-wrapper">
-            <!-- FRONT CARD -->
-            <div class="id-card id-card-portrait front">
-              ${bgFrontHtml}
-              <div class="card-header-band" style="z-index: 10;">
-                <div class="crest-container">
-                  ${logoUrl ? `<img src="${logoUrl}" style="width:100%;height:100%;object-fit:contain;"/>` : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="crest-icon"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`}
-                </div>
-                <div class="header-text-container">
-                  <div class="school-name-text">${schoolName}</div>
-                  <div class="document-title">KARTU IDENTITAS SISWA</div>
-                </div>
+    if (idCardLayout === 'portrait') {
+      return `
+        <div class="card-pair-wrapper">
+          <!-- FRONT CARD -->
+          <div class="id-card id-card-portrait front">
+            ${bgFrontHtml}
+            <div class="card-header-band" style="z-index: 10;">
+              <div class="crest-container">
+                ${logoUrl ? `<img src="${logoUrl}" style="width:100%;height:100%;object-fit:contain;"/>` : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="crest-icon"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`}
+              </div>
+              <div class="header-text-container">
+                <div class="school-name-text">${schoolName}</div>
+                <div class="document-title">KARTU IDENTITAS SISWA</div>
+              </div>
+            </div>
+            
+            <div class="national-strip" style="z-index: 10;"></div>
+            
+            <div class="card-body-container" style="z-index: 10;">
+              <div class="avatar-frame">
+                ${avatarSvg}
               </div>
               
-              <div class="national-strip" style="z-index: 10;"></div>
+              <div class="student-name-display">${s.name}</div>
+              ${nisHtml}
               
-              <div class="card-body-container" style="z-index: 10;">
-                <div class="avatar-frame">
+              <div class="info-table">
+                <div class="info-row">
+                  <span class="info-label">KELAS</span>
+                  <span class="info-value">${s.className}</span>
+                </div>
+                <div class="info-row">
+                  <span class="info-label">GENDER</span>
+                  <span class="info-value">${s.gender === 'L' ? 'Laki-laki (L)' : 'Perempuan (P)'}</span>
+                </div>
+                <div class="info-row">
+                  <span class="info-label">STATUS</span>
+                  <span class="info-value status-active">SISWA AKTIF</span>
+                </div>
+              </div>
+
+              ${barcodeHtmlPortrait}
+            </div>
+            
+            <div class="card-footer-band" style="z-index: 10;">
+              <div class="authorized-signature-section">
+                <div class="validity-sticker">${academicYear}</div>
+                <div class="signature-title-text">Kepala Sekolah,</div>
+                <div class="signature-display">
+                  ${signatureSvg}
+                  ${stampSvg}
+                </div>
+                <div class="signer-name-text">${idCardConfig.visibility.signature ? headmasterName : ''}</div>
+              </div>
+            </div>
+          </div>
+
+          ${includeBackCard ? `
+            <!-- BACK CARD -->
+            <div class="id-card id-card-portrait back">
+              ${bgBackHtml}
+              <div class="back-banner" style="z-index: 10;">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="back-logo-icon"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M4 19.5A2.5 2.5 0 0 0 6.5 22H20M4 19.5V3a1 1 0 0 1 1-1h13a1 1 0 0 1 1 1v19a1 1 0 0 1-1 1H6.5a2.5 2.5 0 0 1-2.5-2.5z"/></svg>
+                <span>KETENTUAN KARTU SISWA</span>
+              </div>
+              
+              <div class="rules-list-container" style="z-index: 10;">
+                <div class="rule-item">
+                  <span class="rule-num">1</span>
+                  <p class="rule-text">Kartu ini adalah tanda pengenal resmi siswa di lingkungan <strong>${schoolName}</strong>.</p>
+                </div>
+                <div class="rule-item">
+                  <span class="rule-num">2</span>
+                  <p class="rule-text">Wajib dibawa setiap hari sekolah dan digunakan untuk melakukan pencatatan kehadiran absensi digital di mesin scanner.</p>
+                </div>
+                <div class="rule-item">
+                  <span class="rule-num">3</span>
+                  <p class="rule-text">Dilarang merusak, memodifikasi, meniru, mencoret, atau memindahtangankan kartu ini kepada siswa lain.</p>
+                </div>
+                <div class="rule-item">
+                  <span class="rule-num">4</span>
+                  <p class="rule-text">Apabila kartu hilang atau mengalami kerusakan fatal, segera hubungi Tata Usaha untuk pencetakan ulang.</p>
+                </div>
+                <div class="rule-item">
+                  <span class="rule-num">5</span>
+                  <p class="rule-text">Jika menemukan kartu ini tercecer, mohon kembalikan langsung ke alamat kantor sekolah atau guru piket.</p>
+                </div>
+              </div>
+
+              <div class="back-footer-credit" style="z-index: 10;">
+                <div class="credit-barcode"></div>
+                <div class="credit-text-label">SISTEM INTEGRASI KODE QR<br/>ABSENSI SMPN 2 PABUARAN</div>
+              </div>
+            </div>
+          ` : ''}
+        </div>
+      `;
+    } else {
+      // LANDSCAPE CARD
+      const barcodeHtmlLandscape2 = idCardConfig.visibility.barcode ? `
+                <div class="barcode-container landscape-barcode-container" style="z-index: 10;">
+                  <div class="barcode-graphic">${barcodeSvgString}</div>
+                </div>
+      ` : '';
+      const nisHtmlLandscape2 = idCardConfig.visibility.nis ? `<div class="landscape-nis-text">NISN: ${s.nis}</div>` : '';
+
+      return `
+        <div class="card-pair-wrapper landscape-wrapper">
+          <!-- FRONT CARD LANDSCAPE -->
+          <div class="id-card id-card-landscape front">
+            ${bgFrontHtml}
+            <div class="landscape-header-band" style="z-index: 10;">
+              <div class="landscape-crest">
+                ${logoUrl ? `<img src="${logoUrl}" style="width:100%;height:100%;object-fit:contain;"/>` : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="crest-icon"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`}
+              </div>
+              <div class="landscape-header-text">
+                <div class="school-name-text">${schoolName}</div>
+                <div class="document-title">KARTU TANDA PELAJAR / SISWA</div>
+              </div>
+              <div class="validity-sticker-landscape">TA. ${academicYear}</div>
+            </div>
+            
+            <div class="national-strip" style="z-index: 10;"></div>
+            
+            <div class="landscape-body-split" style="z-index: 10;">
+              <!-- Left panel: Avatar & Barcode -->
+              <div class="left-panel">
+                <div class="avatar-frame landscape-avatar">
                   ${avatarSvg}
                 </div>
-                
-                <div class="student-name-display">${s.name}</div>
-                ${nisHtml}
-                
-                <div class="info-table">
-                  <div class="info-row">
-                    <span class="info-label">KELAS</span>
-                    <span class="info-value">${s.className}</span>
-                  </div>
-                  <div class="info-row">
-                    <span class="info-label">GENDER</span>
-                    <span class="info-value">${s.gender === 'L' ? 'Laki-laki (L)' : 'Perempuan (P)'}</span>
-                  </div>
-                  <div class="info-row">
-                    <span class="info-label">STATUS</span>
-                    <span class="info-value status-active">SISWA AKTIF</span>
-                  </div>
-                </div>
-
-                ${barcodeHtmlPortrait}
+                ${barcodeHtmlLandscape2}
               </div>
               
-              <div class="card-footer-band" style="z-index: 10;">
-                <div class="authorized-signature-section">
-                  <div class="validity-sticker">${academicYear}</div>
+              <!-- Right panel: Student Info & Sign -->
+              <div class="right-panel">
+                <div class="landscape-name-text">${s.name}</div>
+                ${nisHtmlLandscape2}
+                
+                <div class="landscape-info-grid">
+                  <div class="l-info-item">
+                    <span class="l-info-lbl">KELAS:</span>
+                    <span class="l-info-val">${s.className}</span>
+                  </div>
+                  <div class="l-info-item">
+                    <span class="l-info-lbl">GENDER:</span>
+                    <span class="l-info-val">${s.gender === 'L' ? 'Laki-laki (L)' : 'Perempuan (P)'}</span>
+                  </div>
+                  <div class="l-info-item">
+                    <span class="l-info-lbl">STATUS:</span>
+                    <span class="l-info-val text-green">SISWA AKTIF</span>
+                  </div>
+                </div>
+                
+                <div class="landscape-signature-section">
                   <div class="signature-title-text">Kepala Sekolah,</div>
                   <div class="signature-display">
                     ${signatureSvg}
@@ -774,160 +1005,48 @@ export default function StudentList({
                 </div>
               </div>
             </div>
-
-            ${includeBackCard ? `
-              <!-- BACK CARD -->
-              <div class="id-card id-card-portrait back">
-                ${bgBackHtml}
-                <div class="back-banner" style="z-index: 10;">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="back-logo-icon"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M4 19.5A2.5 2.5 0 0 0 6.5 22H20M4 19.5V3a1 1 0 0 1 1-1h13a1 1 0 0 1 1 1v19a1 1 0 0 1-1 1H6.5a2.5 2.5 0 0 1-2.5-2.5z"/></svg>
-                  <span>KETENTUAN KARTU SISWA</span>
-                </div>
-                
-                <div class="rules-list-container" style="z-index: 10;">
-                  <div class="rule-item">
-                    <span class="rule-num">1</span>
-                    <p class="rule-text">Kartu ini adalah tanda pengenal resmi siswa di lingkungan <strong>${schoolName}</strong>.</p>
-                  </div>
-                  <div class="rule-item">
-                    <span class="rule-num">2</span>
-                    <p class="rule-text">Wajib dibawa setiap hari sekolah dan digunakan untuk melakukan pencatatan kehadiran absensi digital di mesin scanner.</p>
-                  </div>
-                  <div class="rule-item">
-                    <span class="rule-num">3</span>
-                    <p class="rule-text">Dilarang merusak, memodifikasi, meniru, mencoret, atau memindahtangankan kartu ini kepada siswa lain.</p>
-                  </div>
-                  <div class="rule-item">
-                    <span class="rule-num">4</span>
-                    <p class="rule-text">Apabila kartu hilang atau mengalami kerusakan fatal, segera hubungi Tata Usaha untuk pencetakan ulang.</p>
-                  </div>
-                  <div class="rule-item">
-                    <span class="rule-num">5</span>
-                    <p class="rule-text">Jika menemukan kartu ini tercecer, mohon kembalikan langsung ke alamat kantor sekolah atau guru piket.</p>
-                  </div>
-                </div>
-
-                <div class="back-footer-credit" style="z-index: 10;">
-                  <div class="credit-barcode"></div>
-                  <div class="credit-text-label">SISTEM INTEGRASI KODE QR<br/>ABSENSI SMPN 2 PABUARAN</div>
-                </div>
-              </div>
-            ` : ''}
           </div>
-        `;
-      } else {
-        // LANDSCAPE CARD
-        const barcodeHtmlLandscape2 = idCardConfig.visibility.barcode ? `
-                  <div class="barcode-container landscape-barcode-container" style="z-index: 10;">
-                    <div class="barcode-graphic">${barcodeSvgString}</div>
-                  </div>
-        ` : '';
-        const nisHtmlLandscape2 = idCardConfig.visibility.nis ? `<div class="landscape-nis-text">NISN: ${s.nis}</div>` : '';
 
-        return `
-          <div class="card-pair-wrapper landscape-wrapper">
-            <!-- FRONT CARD LANDSCAPE -->
-            <div class="id-card id-card-landscape front">
-              ${bgFrontHtml}
-              <div class="landscape-header-band" style="z-index: 10;">
-                <div class="landscape-crest">
-                  ${logoUrl ? `<img src="${logoUrl}" style="width:100%;height:100%;object-fit:contain;"/>` : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="crest-icon"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`}
-                </div>
-                <div class="landscape-header-text">
-                  <div class="school-name-text">${schoolName}</div>
-                  <div class="document-title">KARTU TANDA PELAJAR / SISWA</div>
-                </div>
-                <div class="validity-sticker-landscape">TA. ${academicYear}</div>
+          ${includeBackCard ? `
+            <!-- BACK CARD LANDSCAPE -->
+            <div class="id-card id-card-landscape back">
+              <div class="back-banner">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="back-logo-icon"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M4 19.5A2.5 2.5 0 0 0 6.5 22H20M4 19.5V3a1 1 0 0 1 1-1h13a1 1 0 0 1 1 1v19a1 1 0 0 1-1 1H6.5a2.5 2.5 0 0 1-2.5-2.5z"/></svg>
+                <span>KETENTUAN PEMAKAIAN KARTU PELAJAR</span>
               </div>
               
-              <div class="national-strip" style="z-index: 10;"></div>
-              
-              <div class="landscape-body-split" style="z-index: 10;">
-                <!-- Left panel: Avatar & Barcode -->
-                <div class="left-panel">
-                  <div class="avatar-frame landscape-avatar">
-                    ${avatarSvg}
-                  </div>
-                  ${barcodeHtmlLandscape2}
+              <div class="rules-list-container landscape-rules">
+                <div class="rule-item">
+                  <span class="rule-num">1</span>
+                  <p class="rule-text">Kartu ini wajib dibawa di lingkungan sekolah dan saat melakukan perekaman absensi mandiri.</p>
                 </div>
-                
-                <!-- Right panel: Student Info & Sign -->
-                <div class="right-panel">
-                  <div class="landscape-name-text">${s.name}</div>
-                  ${nisHtmlLandscape2}
-                  
-                  <div class="landscape-info-grid">
-                    <div class="l-info-item">
-                      <span class="l-info-lbl">KELAS:</span>
-                      <span class="l-info-val">${s.className}</span>
-                    </div>
-                    <div class="l-info-item">
-                      <span class="l-info-lbl">GENDER:</span>
-                      <span class="l-info-val">${s.gender === 'L' ? 'Laki-laki (L)' : 'Perempuan (P)'}</span>
-                    </div>
-                    <div class="l-info-item">
-                      <span class="l-info-lbl">STATUS:</span>
-                      <span class="l-info-val text-green">SISWA AKTIF</span>
-                    </div>
-                  </div>
-                  
-                  <div class="landscape-signature-section">
-                    <div class="signature-title-text">Kepala Sekolah,</div>
-                    <div class="signature-display">
-                      ${signatureSvg}
-                      ${stampSvg}
-                    </div>
-                    <div class="signer-name-text">${idCardConfig.visibility.signature ? headmasterName : ''}</div>
-                  </div>
+                <div class="rule-item">
+                  <span class="rule-num">2</span>
+                  <p class="rule-text">Dilarang keras menyalin, menempel stiker di atas barcode/QR, merusak, atau menyalahgunakan kartu ini.</p>
                 </div>
+                <div class="rule-item">
+                  <span class="rule-num">3</span>
+                  <p class="rule-text">Jika kartu rusak atau hilang, siswa wajib mengajukan pembuatan kartu baru melalui Admin Sekolah.</p>
+                </div>
+                <div class="rule-item">
+                  <span class="rule-num">4</span>
+                  <p class="rule-text">Jika menemukan kartu pelajar ini di jalan, mohon segera hubungi panitia sekolah atau Tata Usaha.</p>
+                </div>
+              </div>
+
+              <div class="back-footer-credit landscape-back-foot">
+                <div class="credit-barcode"></div>
+                <div class="credit-text-label">SISTEM INTEGRASI KODE QR<br/>ABSENSI SMPN 2 PABUARAN</div>
               </div>
             </div>
+          ` : ''}
+        </div>
+      `;
+    }
+  };
 
-            ${includeBackCard ? `
-              <!-- BACK CARD LANDSCAPE -->
-              <div class="id-card id-card-landscape back">
-                <div class="back-banner">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="back-logo-icon"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M4 19.5A2.5 2.5 0 0 0 6.5 22H20M4 19.5V3a1 1 0 0 1 1-1h13a1 1 0 0 1 1 1v19a1 1 0 0 1-1 1H6.5a2.5 2.5 0 0 1-2.5-2.5z"/></svg>
-                  <span>KETENTUAN PEMAKAIAN KARTU PELAJAR</span>
-                </div>
-                
-                <div class="rules-list-container landscape-rules">
-                  <div class="rule-item">
-                    <span class="rule-num">1</span>
-                    <p class="rule-text">Kartu ini wajib dibawa di lingkungan sekolah dan saat melakukan perekaman absensi mandiri.</p>
-                  </div>
-                  <div class="rule-item">
-                    <span class="rule-num">2</span>
-                    <p class="rule-text">Dilarang keras menyalin, menempel stiker di atas barcode/QR, merusak, atau menyalahgunakan kartu ini.</p>
-                  </div>
-                  <div class="rule-item">
-                    <span class="rule-num">3</span>
-                    <p class="rule-text">Jika kartu rusak atau hilang, siswa wajib mengajukan pembuatan kartu baru melalui Admin Sekolah.</p>
-                  </div>
-                  <div class="rule-item">
-                    <span class="rule-num">4</span>
-                    <p class="rule-text">Jika menemukan kartu pelajar ini di jalan, mohon segera hubungi panitia sekolah atau Tata Usaha.</p>
-                  </div>
-                </div>
-
-                <div class="back-footer-credit landscape-back-foot">
-                  <div class="credit-barcode"></div>
-                  <div class="credit-text-label">SISTEM INTEGRASI KODE QR<br/>ABSENSI SMPN 2 PABUARAN</div>
-                </div>
-              </div>
-            ` : ''}
-          </div>
-        `;
-      }
-    }).join('');
-
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Cetak ID Card Pelajar - ${activeClass}</title>
-          <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-          <style>
-            :root {
+  const getIdCardStyles = (rootSelector: string = ':root'): string => `
+            ${rootSelector} {
               --primary: #1e3a8a;
               --primary-rgb: 30, 58, 138;
               --secondary: #3b82f6;
@@ -1775,6 +1894,148 @@ export default function StudentList({
                 background-color: transparent !important;
               }
             }
+  `;
+
+  const exportIdCardsToZip = async (
+    targetStudents: Student[],
+    classNameTitle: string = 'Semua',
+    onProgress?: (pct: number) => void,
+    onStatus?: (label: string) => void,
+    downloadDoc: Document = document
+  ) => {
+    if (!targetStudents.length) {
+      throw new Error('Tidak ada data siswa untuk diekspor.');
+    }
+
+    const stage = document.createElement('div');
+    stage.className = `id-card-export-stage theme-${idCardTheme}`;
+    stage.style.cssText =
+      'position:fixed;left:-99999px;top:0;width:1200px;pointer-events:none;z-index:-1;background:#ffffff;font-family:"Inter",system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;';
+
+    const styleEl = document.createElement('style');
+    styleEl.textContent = `
+      ${getIdCardStyles('.id-card-export-stage')}
+      :where(.id-card-export-stage) {
+        line-height: normal;
+        color: #0f172a;
+      }
+      :where(.id-card-export-stage) .id-card {
+        box-shadow: none !important;
+      }
+    `;
+    stage.appendChild(styleEl);
+
+    const cardHost = document.createElement('div');
+    stage.appendChild(cardHost);
+    document.body.appendChild(stage);
+
+    try {
+      const zip = new JSZip();
+      const total = targetStudents.length;
+
+      for (let i = 0; i < total; i++) {
+        const student = targetStudents[i];
+        cardHost.innerHTML = buildStudentCardPairHtml(student);
+        await prepareElementImagesForCapture(cardHost, student.gender);
+
+        const wrapper = cardHost.querySelector('.card-pair-wrapper') as HTMLElement | null;
+        if (!wrapper) {
+          throw new Error(`Elemen kartu untuk ${student.name || 'Siswa'} tidak ditemukan.`);
+        }
+
+        const safeName = sanitizeFilenamePart(student.name, 'Siswa');
+        const safeNis = sanitizeFilenamePart(student.nis, 'NoNIS');
+        const baseFilename = `ID_${safeNis}_${safeName}`;
+        const uniqueSuffix = zip.file(`${baseFilename}_Bagian_Depan.png`) || zip.file(`${baseFilename}.png`) ? `_${i + 1}` : '';
+
+        const frontCard = wrapper.querySelector('.front') as HTMLElement | null;
+        const backCard = wrapper.querySelector('.back') as HTMLElement | null;
+
+        const captureOptions = {
+          pixelRatio: 3,
+          backgroundColor: '#ffffff',
+          skipFonts: true,
+          cacheBust: false,
+          style: {
+            margin: '0',
+            boxShadow: 'none'
+          }
+        };
+
+        if (frontCard && backCard) {
+          const frontDataUrl = await toPng(frontCard, captureOptions);
+          const frontBase64 = frontDataUrl.split(',')[1];
+          if (!frontBase64) throw new Error(`Gagal merender bagian depan kartu ${student.name}.`);
+          zip.file(`${baseFilename}${uniqueSuffix}_Bagian_Depan.png`, frontBase64, { base64: true });
+
+          const backDataUrl = await toPng(backCard, captureOptions);
+          const backBase64 = backDataUrl.split(',')[1];
+          if (!backBase64) throw new Error(`Gagal merender bagian belakang kartu ${student.name}.`);
+          zip.file(`${baseFilename}${uniqueSuffix}_Bagian_Belakang.png`, backBase64, { base64: true });
+        } else {
+          const targetEl = (frontCard || wrapper.querySelector('.id-card') || wrapper) as HTMLElement;
+          const dataUrl = await toPng(targetEl, captureOptions);
+          const base64 = dataUrl.split(',')[1];
+          if (!base64) throw new Error(`Gagal merender kartu ${student.name}.`);
+          zip.file(`${baseFilename}${uniqueSuffix}.png`, base64, { base64: true });
+        }
+
+        const pct = Math.round(((i + 1) / total) * 100);
+        onProgress?.(pct);
+        await new Promise((resolve) => window.setTimeout(resolve, 0));
+      }
+
+      onStatus?.('Mengemas ZIP...');
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const safeClass = sanitizeFilenamePart(classNameTitle, 'Semua');
+      triggerBlobDownload(zipBlob, `ID_Cards_${safeClass}.zip`, downloadDoc);
+    } finally {
+      stage.remove();
+    }
+  };
+
+  const handleDirectModalZipDownload = async (targetStudents: Student[], classNameTitle: string = 'Semua') => {
+    if (isExportingZip || !targetStudents.length) return;
+    setZipError('');
+    setIsExportingZip(true);
+    setZipProgress(0);
+    setZipStatusText('Memproses ZIP (0%)...');
+
+    try {
+      await exportIdCardsToZip(
+        targetStudents,
+        classNameTitle,
+        (pct) => {
+          setZipProgress(pct);
+          setZipStatusText(`Memproses ZIP (${pct}%)...`);
+        },
+        (status) => setZipStatusText(status),
+        document
+      );
+    } catch (err: any) {
+      console.error('Error creating ZIP:', err);
+      setZipError(err?.message || 'Gagal membuat file ZIP. Silakan coba lagi.');
+    } finally {
+      setIsExportingZip(false);
+      setZipStatusText('');
+      setZipProgress(0);
+    }
+  };
+
+  // Print high-fidelity student ID Cards
+  const handlePrintIDCardsAction = (targetStudents: Student[], classNameTitle: string = 'Semua') => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const cardsHtml = targetStudents.map(buildStudentCardPairHtml).join('');
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Cetak ID Card Pelajar - ${activeClass}</title>
+          <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+          <style>
+            ${getIdCardStyles(':root')}
           </style>
         </head>
         <body class="theme-${idCardTheme}">
@@ -1783,89 +2044,68 @@ export default function StudentList({
             <span style="font-size: 13px; font-weight: bold; color: #1f2937;">Pratinjau Cetak ID Card (${targetStudents.length} Siswa, Kelas: ${classNameTitle})</span>
             <div style="display: flex; gap: 8px;">
               <button class="print-btn" onclick="window.print()">Cetak (Native)</button>
-              <button class="print-btn" style="background-color: #10b981;" onclick="downloadZIP()">Unduh ZIP (Gambar)</button>
+              <button class="print-btn" id="zip-download-btn" style="background-color: #10b981;" onclick="downloadZIP()">Unduh ZIP (Gambar)</button>
               <button class="close-btn" onclick="window.close()">Tutup</button>
             </div>
           </div>
+
+          <div id="zip-error-banner" style="display:none;max-width:680px;width:100%;margin-bottom:16px;padding:10px 14px;border-radius:10px;background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;font-size:12px;font-weight:600;text-align:center;"></div>
 
           <div class="cards-container" id="pdf-content">
             ${cardsHtml}
           </div>
 
-          <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
-          <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-          <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
-          <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
           <script>
             async function downloadZIP() {
-              const btn = document.querySelector('button[onclick="downloadZIP()"]');
-              const originalText = btn.innerText;
-              btn.innerText = "Memproses ZIP (0%)...";
-              btn.disabled = true;
+              const btn = document.getElementById('zip-download-btn');
+              const errBanner = document.getElementById('zip-error-banner');
+              const originalText = btn ? btn.innerText : 'Unduh ZIP (Gambar)';
+              if (errBanner) {
+                errBanner.style.display = 'none';
+                errBanner.textContent = '';
+              }
+              if (btn) {
+                btn.innerText = 'Memproses ZIP (0%)...';
+                btn.disabled = true;
+              }
 
               try {
-                const zip = new JSZip();
-                const wrappers = document.querySelectorAll('.card-pair-wrapper');
-                const students = ${JSON.stringify(targetStudents)};
-                const total = wrappers.length;
-                
-                // Tambahkan sedikit lebar window untuk html2canvas agar tidak memotong elemen
-                const canvasOptions = { 
-                  scale: 3, 
-                  useCORS: true,
-                  backgroundColor: '#ffffff',
-                  windowWidth: document.documentElement.scrollWidth + 100
-                };
-                
-                for (let i = 0; i < total; i++) {
-                  const wrapper = wrappers[i];
-                  const student = students[i];
-                  
-                  const safeName = (student.name || 'Siswa').replace(/[^a-zA-Z0-9]/g, '_');
-                  const safeNis = (student.nis || 'NoNIS').replace(/[^a-zA-Z0-9]/g, '_');
-                  
-                  const frontCard = wrapper.querySelector('.front');
-                  const backCard = wrapper.querySelector('.back');
-
-                  if (frontCard && backCard) {
-                    // Capture Front
-                    const canvasFront = await html2canvas(frontCard, canvasOptions);
-                    const imgDataFront = canvasFront.toDataURL('image/png').split(',')[1];
-                    zip.file(\`ID_\${safeNis}_\${safeName}_Bagian_Depan.png\`, imgDataFront, {base64: true});
-
-                    // Capture Back
-                    const canvasBack = await html2canvas(backCard, canvasOptions);
-                    const imgDataBack = canvasBack.toDataURL('image/png').split(',')[1];
-                    zip.file(\`ID_\${safeNis}_\${safeName}_Bagian_Belakang.png\`, imgDataBack, {base64: true});
-                  } else {
-                    // Jika satu sisi (hanya depan)
-                    const targetEl = frontCard || wrapper.querySelector('.id-card') || wrapper;
-                    const canvas = await html2canvas(targetEl, canvasOptions);
-                    const imgData = canvas.toDataURL('image/png').split(',')[1];
-                    zip.file(\`ID_\${safeNis}_\${safeName}.png\`, imgData, {base64: true});
-                  }
-                  
-                  btn.innerText = \`Memproses ZIP (\${Math.round(((i + 1) / total) * 100)}%)...\`;
+                if (typeof window.__exportZip !== 'function') {
+                  throw new Error('Koneksi ke halaman utama aplikasi terputus. Silakan tutup pratinjau ini dan buka ulang dari aplikasi.');
                 }
-
-                btn.innerText = "Mengemas ZIP...";
-                const content = await zip.generateAsync({type:"blob"});
-                saveAs(content, 'ID_Cards_${classNameTitle.replace(/\s+/g, '_')}.zip');
+                await window.__exportZip(
+                  function(pct) {
+                    if (btn) btn.innerText = 'Memproses ZIP (' + pct + '%)...';
+                  },
+                  function(statusLabel) {
+                    if (btn) btn.innerText = statusLabel;
+                  }
+                );
               } catch (error) {
-                console.error("Error creating ZIP:", error);
-                alert("Gagal membuat file ZIP.");
+                console.error('Error creating ZIP:', error);
+                if (errBanner) {
+                  errBanner.textContent = 'Gagal membuat file ZIP: ' + (error && error.message ? error.message : 'Terjadi kesalahan saat memproses gambar.');
+                  errBanner.style.display = 'block';
+                }
               } finally {
-                btn.innerText = originalText;
-                btn.disabled = false;
+                if (btn) {
+                  btn.innerText = originalText;
+                  btn.disabled = false;
+                }
               }
             }
-
-            // Barcode SVG sudah dirender inline sehingga siap dicetak dan diunduh seketika tanpa delay
           </script>
         </body>
       </html>
     `);
     printWindow.document.close();
+
+    (printWindow as any).__exportZip = async (
+      onProgress?: (pct: number) => void,
+      onStatus?: (label: string) => void
+    ) => {
+      await exportIdCardsToZip(targetStudents, classNameTitle, onProgress, onStatus, printWindow.document);
+    };
   };
 
   return (
@@ -3108,12 +3348,28 @@ export default function StudentList({
             </div>
             
             {/* Footer */}
+            {zipError && (
+              <div className="px-6 py-2 bg-red-50 border-t border-red-100 text-xs text-red-700 font-semibold">
+                {zipError}
+              </div>
+            )}
             <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-end gap-3 shrink-0">
               <button
-                onClick={() => setViewingIdCardStudent(null)}
+                onClick={() => {
+                  setZipError('');
+                  setViewingIdCardStudent(null);
+                }}
                 className="px-4 py-2 hover:bg-gray-200 text-gray-600 font-bold rounded-xl text-xs transition-colors cursor-pointer"
               >
                 Batal
+              </button>
+              <button
+                onClick={() => handleDirectModalZipDownload([viewingIdCardStudent], viewingIdCardStudent.name)}
+                disabled={isExportingZip}
+                className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-bold rounded-xl text-xs flex items-center gap-2 transition-colors cursor-pointer shadow-sm shadow-emerald-100"
+              >
+                <Download className="h-4 w-4" />
+                {isExportingZip ? (zipStatusText || `Memproses ZIP (${zipProgress}%)...`) : 'Unduh ZIP'}
               </button>
               <button
                 onClick={() => handlePrintIDCardsAction([viewingIdCardStudent], viewingIdCardStudent.name)}
@@ -3357,12 +3613,28 @@ export default function StudentList({
             </div>
 
             {/* Footer */}
+            {zipError && (
+              <div className="px-6 py-2 bg-red-50 border-t border-red-100 text-xs text-red-700 font-semibold">
+                {zipError}
+              </div>
+            )}
             <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-end gap-3">
               <button
-                onClick={() => setIsBulkIdCardModalOpen(false)}
+                onClick={() => {
+                  setZipError('');
+                  setIsBulkIdCardModalOpen(false);
+                }}
                 className="px-4 py-2 hover:bg-gray-200 text-gray-600 font-bold rounded-xl text-xs transition-colors cursor-pointer"
               >
                 Batal
+              </button>
+              <button
+                onClick={() => handleDirectModalZipDownload(bulkTargetStudents, bulkPrintClass)}
+                disabled={isExportingZip || bulkTargetStudents.length === 0}
+                className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-bold rounded-xl text-xs flex items-center gap-2 transition-colors cursor-pointer shadow-sm shadow-emerald-100"
+              >
+                <Download className="h-4 w-4" />
+                {isExportingZip ? (zipStatusText || `Memproses ZIP (${zipProgress}%)...`) : 'Unduh ZIP'}
               </button>
               <button
                 onClick={() => {
