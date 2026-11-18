@@ -62,6 +62,8 @@ export interface AttendanceConfig {
   signatureImage?: string;
   stampImage?: string;
   teachers?: Record<string, { name: string; nip: string }>;
+  studentsVersion?: number;
+  eventsVersion?: number;
 }
 
 export interface CalendarEvent {

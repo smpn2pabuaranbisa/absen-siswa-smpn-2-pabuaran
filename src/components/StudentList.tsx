@@ -809,7 +809,7 @@ export default function StudentList({
 
                 <div class="back-footer-credit" style="z-index: 10;">
                   <div class="credit-barcode"></div>
-                  <div class="credit-text-label">SISTEM INTEGRASI KODE QR ABSENSI SEKOLAH</div>
+                  <div class="credit-text-label">SISTEM INTEGRASI KODE QR<br/>ABSENSI SMPN 2 PABUARAN</div>
                 </div>
               </div>
             ` : ''}
@@ -912,7 +912,7 @@ export default function StudentList({
 
                 <div class="back-footer-credit landscape-back-foot">
                   <div class="credit-barcode"></div>
-                  <div class="credit-text-label">SISTEM INTEGRASI ABSENSI DIGITAL QR INDONESIA</div>
+                  <div class="credit-text-label">SISTEM INTEGRASI KODE QR<br/>ABSENSI SMPN 2 PABUARAN</div>
                 </div>
               </div>
             ` : ''}
@@ -1213,7 +1213,8 @@ export default function StudentList({
             .info-row {
               display: flex;
               justify-content: space-between;
-              padding: 2.5px 0;
+              align-items: center;
+              padding: 2px 0;
               border-bottom: 0.5px solid #f1f5f9;
             }
             .info-row:last-child {
@@ -1221,14 +1222,14 @@ export default function StudentList({
             }
 
             .info-label {
-              font-size: 6.5px;
+              font-size: 8.5px;
               font-weight: 800;
               color: #64748b;
               letter-spacing: 0.2px;
             }
 
             .info-value {
-              font-size: 7px;
+              font-size: 9px;
               font-weight: 800;
               color: #1e293b;
             }
@@ -1464,7 +1465,7 @@ export default function StudentList({
 
             .credit-barcode {
               width: 100%;
-              height: 0.38cm;
+              height: 0.28cm;
               background: linear-gradient(to right, 
                 #111 0%, #111 2%, transparent 2%, transparent 4%,
                 #111 4%, #111 8%, transparent 8%, transparent 9%,
@@ -1488,10 +1489,12 @@ export default function StudentList({
             }
 
             .credit-text-label {
-              font-size: 5px;
+              font-size: 7px;
               font-weight: 800;
-              color: #4b5563;
-              letter-spacing: 0.2px;
+              color: #374151;
+              letter-spacing: 0.25px;
+              line-height: 1.25;
+              text-align: center;
             }
 
             /* LANDSCAPE STYLING */
@@ -1623,13 +1626,13 @@ export default function StudentList({
             }
 
             .l-info-lbl {
-              font-size: 4.8px;
+              font-size: 6.5px;
               font-weight: 700;
               color: #9ca3af;
             }
 
             .l-info-val {
-              font-size: 4.8px;
+              font-size: 6.8px;
               font-weight: 700;
               color: #374151;
             }
@@ -2894,7 +2897,7 @@ export default function StudentList({
                           </div>
 
                           {/* Metadata Table */}
-                          <div className="w-full bg-slate-50 p-2 rounded-lg border border-slate-200 flex flex-col gap-1 text-[7.5px] relative z-10">
+                          <div className="w-full bg-slate-50 p-2 rounded-lg border border-slate-200 flex flex-col gap-1 text-[9.5px] relative z-10">
                             <div className="flex justify-between border-b border-gray-150 pb-0.5">
                               <span className="text-gray-500 font-extrabold uppercase">KELAS</span>
                               <span className="text-gray-900 font-black">{viewingIdCardStudent.className}</span>
@@ -2995,7 +2998,7 @@ export default function StudentList({
                               )}
                             </div>
 
-                            <div className="bg-slate-50 p-1 rounded border border-slate-100 grid grid-cols-2 gap-x-2 gap-y-0.5 text-[5.8px] font-bold text-gray-700 my-1">
+                            <div className="bg-slate-50 p-1 rounded border border-slate-100 grid grid-cols-2 gap-x-2 gap-y-0.5 text-[7.5px] font-bold text-gray-700 my-1">
                               <div><span className="text-gray-400">KELAS:</span> {viewingIdCardStudent.className}</div>
                               <div><span className="text-gray-400">GENDER:</span> {viewingIdCardStudent.gender === 'L' ? 'L' : 'P'}</div>
                               <div className="col-span-2"><span className="text-gray-400">STATUS:</span> <span className="text-emerald-600">SISWA AKTIF</span></div>
@@ -3086,14 +3089,16 @@ export default function StudentList({
                         </div>
 
                         {/* Barcode & label */}
-                        <div className="relative z-10 border-t border-slate-100 pt-1.5 flex flex-col items-center gap-1">
-                          <div className="w-full h-[14px] bg-linear-to-r from-neutral-800 from-5% to-white to-5% flex items-center justify-center" 
+                        <div className="relative z-10 border-t border-slate-100 pt-1 flex flex-col items-center gap-1">
+                          <div className="w-full h-[10px] bg-linear-to-r from-neutral-800 from-5% to-white to-5% flex items-center justify-center" 
                                style={{
                                  background: 'linear-gradient(90deg, #111 2%, #fff 2%, #fff 4%, #111 4%, #111 8%, #fff 8%, #111 11%, #fff 11%, #111 15%, #fff 15%, #111 22%, #fff 22%, #111 26%, #fff 26%, #111 31%, #fff 31%, #111 38%, #fff 38%, #111 42%, #fff 42%, #111 48%, #fff 48%, #111 51%, #fff 51%, #111 58%, #fff 58%, #111 63%, #fff 63%, #111 70%, #fff 70%, #111 72%, #fff 72%, #111 78%, #fff 78%, #111 82%, #fff 82%, #111 88%, #fff 88%, #111 94%, #fff 94%, #111 100%)',
                                  opacity: 0.7
                                }}
                           />
-                          <span className="text-[5px] font-extrabold text-gray-600 uppercase tracking-widest leading-none">ABSENSI DIGITAL QR INDONESIA</span>
+                          <span className="text-[7px] font-extrabold text-gray-700 uppercase tracking-wider leading-tight text-center">
+                            SISTEM INTEGRASI KODE QR<br />ABSENSI SMPN 2 PABUARAN
+                          </span>
                         </div>
                       </div>
                     </div>

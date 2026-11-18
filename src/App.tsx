@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
   Student,
   AttendanceRecord,
@@ -31,8 +31,9 @@ import {
   setDoc,
   deleteDoc,
   getDocs,
-  getDoc,
   writeBatch,
+  query,
+  where,
 } from "firebase/firestore";
 import { db } from "./lib/firebase";
 import {
@@ -62,6 +63,7 @@ import {
   CalendarDays,
   Cloud,
   CloudOff,
+  RefreshCw,
 } from "lucide-react";
 
 export default function App() {
@@ -78,7 +80,26 @@ export default function App() {
   // Time clock & sync state
   const [currentTime, setCurrentTime] = useState(new Date());
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [isQuotaExceeded, setIsQuotaExceeded] = useState(false);
   const [isLoadingConfig, setIsLoadingConfig] = useState(true);
+  const [isSyncingManual, setIsSyncingManual] = useState(false);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+
+  // Refs for race-free merging in async listeners & loaders
+  const recordsRef = useRef<AttendanceRecord[]>([]);
+  const studentsRef = useRef<Student[]>([]);
+  const loadedMonthsRef = useRef<Set<string>>(new Set());
+  const isSyncingStudentsRef = useRef(false);
+  const isSyncingEventsRef = useRef(false);
+
+  // Bounded cutoff: earlier of (start of current month) and (7 days ago)
+  const recentCutoffISO = useMemo(() => {
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+    const sevenDaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6, 0, 0, 0, 0);
+    const cutoff = startOfMonth.getTime() < sevenDaysAgo.getTime() ? startOfMonth : sevenDaysAgo;
+    return cutoff.toISOString();
+  }, []);
 
   // Dynamic network state listener
   useEffect(() => {
@@ -92,29 +113,162 @@ export default function App() {
     };
   }, []);
 
-  // 1. Initial Seeding and Real-Time Firebase Synchronizer
+  const isQuotaError = (err: unknown) => {
+    const code = (err as { code?: string })?.code || "";
+    const msg = err instanceof Error ? err.message : String(err || "");
+    return (
+      code === "resource-exhausted" ||
+      msg.toLowerCase().includes("quota") ||
+      msg.toLowerCase().includes("resource-exhausted")
+    );
+  };
+
+  const handleFirestoreListenError = useCallback((label: string, err: unknown) => {
+    if (isQuotaError(err)) {
+      setIsQuotaExceeded(true);
+      console.warn(`Firestore daily quota reached (${label}), running in local offline-first mode.`);
+    } else {
+      console.error(`Error listening to ${label}:`, err);
+    }
+  }, []);
+
+  const syncStudentsFromCloud = useCallback(async (expectedVersion?: number) => {
+    if (isSyncingStudentsRef.current) return;
+    isSyncingStudentsRef.current = true;
+    try {
+      const snap = await getDocs(collection(db, "students"));
+      setIsQuotaExceeded(false);
+      const list: Student[] = [];
+      snap.forEach((d) => {
+        list.push(d.data() as Student);
+      });
+      studentsRef.current = list;
+      setStudents(list);
+      await saveStudentsLocal(list);
+      const verToSave = expectedVersion && expectedVersion > 0 ? expectedVersion : 1;
+      safeLocalStorageSet("absensi_qr_students_version", String(verToSave));
+    } catch (err) {
+      handleFirestoreListenError("students", err);
+    } finally {
+      isSyncingStudentsRef.current = false;
+    }
+  }, [handleFirestoreListenError]);
+
+  const syncEventsFromCloud = useCallback(async (expectedVersion?: number) => {
+    if (isSyncingEventsRef.current) return;
+    isSyncingEventsRef.current = true;
+    try {
+      const snap = await getDocs(collection(db, "calendar_events"));
+      setIsQuotaExceeded(false);
+      const list: CalendarEvent[] = [];
+      snap.forEach((d) => {
+        list.push(d.data() as CalendarEvent);
+      });
+      setEvents(list);
+      await saveEventsLocal(list);
+      const verToSave = expectedVersion && expectedVersion > 0 ? expectedVersion : 1;
+      safeLocalStorageSet("absensi_qr_events_version", String(verToSave));
+    } catch (err) {
+      handleFirestoreListenError("events", err);
+    } finally {
+      isSyncingEventsRef.current = false;
+    }
+  }, [handleFirestoreListenError]);
+
+  const ensureMonthLoaded = useCallback(
+    async (year: number, month: number, force = false) => {
+      const monthKey = `${year}-${String(month + 1).padStart(2, "0")}`;
+      const startDate = new Date(year, month, 1, 0, 0, 0, 0);
+      const endDate = new Date(year, month + 1, 0, 23, 59, 59, 999);
+      const startISO = startDate.toISOString();
+      const endISO = endDate.toISOString();
+
+      // Current active range is already kept live by onSnapshot
+      if (startISO >= recentCutoffISO && !force) {
+        return;
+      }
+
+      if (loadedMonthsRef.current.has(monthKey) && !force) {
+        return;
+      }
+
+      setIsLoadingHistory(true);
+      try {
+        const monthQuery = query(
+          collection(db, "attendance_records"),
+          where("timestamp", ">=", startISO),
+          where("timestamp", "<=", endISO),
+        );
+        const snap = await getDocs(monthQuery);
+        setIsQuotaExceeded(false);
+
+        const fetched: AttendanceRecord[] = [];
+        snap.forEach((d) => {
+          fetched.push(d.data() as AttendanceRecord);
+        });
+
+        const baseRecords =
+          recordsRef.current.length > 0
+            ? recordsRef.current
+            : (await loadRecordsLocal()) || [];
+
+        const outsideRange = baseRecords.filter(
+          (r) => r.timestamp < startISO || r.timestamp > endISO,
+        );
+        const mergedMap = new Map<string, AttendanceRecord>();
+        outsideRange.forEach((r) => mergedMap.set(r.id, r));
+        fetched.forEach((r) => mergedMap.set(r.id, r));
+
+        const merged = Array.from(mergedMap.values()).sort(
+          (a, b) =>
+            new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
+        );
+
+        recordsRef.current = merged;
+        setRecords(merged);
+        await saveRecordsLocal(merged);
+        loadedMonthsRef.current.add(monthKey);
+      } catch (err) {
+        handleFirestoreListenError(`records (${monthKey})`, err);
+      } finally {
+        setIsLoadingHistory(false);
+      }
+    },
+    [recentCutoffISO, handleFirestoreListenError],
+  );
+
+  // 1. Initial Seeding and Optimized Firebase Synchronizer
   useEffect(() => {
+    let seededCloudConfig = false;
+
     // A. Asynchronously load local offline storage first for instant responsive rendering
     const loadInitialLocalData = async () => {
       try {
         const storedConfig = await loadConfigLocal();
         if (storedConfig) {
           setConfig(storedConfig);
+          if (storedConfig.isConfigured) {
+            setIsLoadingConfig(false);
+          }
         }
 
         const storedStudents = await loadStudentsLocal();
         if (storedStudents && storedStudents.length > 0) {
+          studentsRef.current = storedStudents;
           setStudents(storedStudents);
         } else {
+          studentsRef.current = INITIAL_STUDENTS;
           setStudents(INITIAL_STUDENTS);
           saveStudentsLocal(INITIAL_STUDENTS);
         }
 
         const storedRecords = await loadRecordsLocal();
         if (storedRecords && storedRecords.length > 0) {
+          recordsRef.current = storedRecords;
           setRecords(storedRecords);
         } else {
           const initialRecords = generateMockAttendance();
+          recordsRef.current = initialRecords;
           setRecords(initialRecords);
           saveRecordsLocal(initialRecords);
         }
@@ -133,114 +287,123 @@ export default function App() {
 
     loadInitialLocalData();
 
-    // B. Ensure config exists in cloud
-    const checkAndSeedCloudDatabase = async () => {
-      try {
-        const cfgSnap = await getDoc(doc(db, "config", "global_config"));
-        if (!cfgSnap.exists()) {
-          const curConfig = (await loadConfigLocal()) || INITIAL_CONFIG;
-          await setDoc(doc(db, "config", "global_config"), curConfig);
-          console.log("Cloud config initialized.");
-        }
-      } catch (err) {
-        console.warn(
-          "Unable to auto-seed cloud config:",
-          err,
-        );
-      }
-    };
-
-    checkAndSeedCloudDatabase();
-
-    // C. Attach live real-time listeners for instant multi-device collaborative scanning
-    const unsubStudents = onSnapshot(
-      collection(db, "students"),
-      (snap) => {
-        const list: Student[] = [];
-        snap.forEach((d) => {
-          list.push(d.data() as Student);
-        });
-        setStudents(list);
-        saveStudentsLocal(list);
-      },
-      (err) => console.error("Error listening to students:", err),
+    // B. Bounded real-time listener: ONLY listen to recent attendance records (>= recentCutoffISO)
+    // Older months are loaded on-demand when requested in Jurnal Absensi, saving massive read quota!
+    const recentRecordsQuery = query(
+      collection(db, "attendance_records"),
+      where("timestamp", ">=", recentCutoffISO),
     );
 
     const unsubRecords = onSnapshot(
-      collection(db, "attendance_records"),
-      (snap) => {
-        const list: AttendanceRecord[] = [];
+      recentRecordsQuery,
+      async (snap) => {
+        if (!snap.metadata.fromCache) setIsQuotaExceeded(false);
+        if (snap.empty && snap.metadata.fromCache) return;
+
+        const recentList: AttendanceRecord[] = [];
         snap.forEach((d) => {
-          list.push(d.data() as AttendanceRecord);
+          recentList.push(d.data() as AttendanceRecord);
         });
-        // Sort records by timestamp descending
-        list.sort(
+
+        const baseRecords =
+          recordsRef.current.length > 0
+            ? recordsRef.current
+            : (await loadRecordsLocal()) || [];
+
+        // Keep cached records older than recentCutoffISO, replace recent window with live snapshot
+        const olderCached = baseRecords.filter(
+          (r) => r.timestamp < recentCutoffISO,
+        );
+        const mergedMap = new Map<string, AttendanceRecord>();
+        olderCached.forEach((r) => mergedMap.set(r.id, r));
+        recentList.forEach((r) => mergedMap.set(r.id, r));
+
+        const merged = Array.from(mergedMap.values()).sort(
           (a, b) =>
             new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
         );
-        setRecords(list);
-        saveRecordsLocal(list);
+
+        recordsRef.current = merged;
+        setRecords(merged);
+        saveRecordsLocal(merged);
       },
-      (err) => console.error("Error listening to records:", err),
+      (err) => handleFirestoreListenError("records", err),
     );
 
-    const unsubEvents = onSnapshot(
-      collection(db, "calendar_events"),
-      (snap) => {
-        const list: CalendarEvent[] = [];
-        snap.forEach((d) => {
-          list.push(d.data() as CalendarEvent);
-        });
-        setEvents(list);
-        saveEventsLocal(list);
-      },
-      (err) => console.error("Error listening to events:", err),
-    );
-
-    let configLoaded = false;
-
-    // First try to fetch directly to avoid cache-first flashing
-    getDoc(doc(db, "config", "global_config"))
-      .then((snap) => {
-        if (snap.exists()) {
-          const cfg = snap.data() as AttendanceConfig;
-          setConfig(cfg);
-          saveConfigLocal(cfg);
-        }
-        configLoaded = true;
-        setIsLoadingConfig(false);
-      })
-      .catch((err) => {
-        console.warn("Failed to fetch config directly:", err);
-        configLoaded = true;
-        setIsLoadingConfig(false);
-      });
-
+    // C. Single config listener (1 doc) drives version-checked cache-first sync for students & events
     const unsubConfig = onSnapshot(
       doc(db, "config", "global_config"),
-      (snap) => {
+      async (snap) => {
+        const fromCache = snap.metadata.fromCache;
+        if (!fromCache) setIsQuotaExceeded(false);
+
         if (snap.exists()) {
           const cfg = snap.data() as AttendanceConfig;
           setConfig(cfg);
           saveConfigLocal(cfg);
+
+          if (!fromCache) {
+            // Check if students need syncing from cloud
+            const localStudentsVer = Number(
+              safeLocalStorageGet("absensi_qr_students_version") || "0",
+            );
+            const remoteStudentsVer = cfg.studentsVersion || 0;
+            const localStudentsList =
+              studentsRef.current.length > 0
+                ? studentsRef.current
+                : (await loadStudentsLocal()) || [];
+            const hasLocalStudents = localStudentsList.length > 0;
+
+            if (
+              !hasLocalStudents ||
+              remoteStudentsVer > localStudentsVer ||
+              (remoteStudentsVer === 0 && localStudentsVer === 0)
+            ) {
+              syncStudentsFromCloud(remoteStudentsVer);
+            }
+
+            // Check if calendar events need syncing from cloud
+            const localEventsVer = Number(
+              safeLocalStorageGet("absensi_qr_events_version") || "0",
+            );
+            const remoteEventsVer = cfg.eventsVersion || 0;
+            if (
+              remoteEventsVer > localEventsVer ||
+              (remoteEventsVer === 0 && localEventsVer === 0)
+            ) {
+              syncEventsFromCloud(remoteEventsVer);
+            }
+          }
+        } else if (!fromCache && !seededCloudConfig) {
+          seededCloudConfig = true;
+          try {
+            const curConfig = (await loadConfigLocal()) || INITIAL_CONFIG;
+            await setDoc(doc(db, "config", "global_config"), curConfig);
+          } catch (seedErr) {
+            if (isQuotaError(seedErr)) {
+              setIsQuotaExceeded(true);
+            }
+            console.warn("Unable to auto-seed cloud config:", seedErr);
+          }
         }
-        if (!configLoaded && !snap.metadata.fromCache) {
-          setIsLoadingConfig(false);
-        }
+        setIsLoadingConfig(false);
       },
       (err) => {
-        console.error("Error listening to config:", err);
+        handleFirestoreListenError("config", err);
         setIsLoadingConfig(false);
       },
     );
 
     return () => {
-      unsubStudents();
       unsubRecords();
-      unsubEvents();
       unsubConfig();
     };
-  }, []);
+  }, [
+    recentCutoffISO,
+    handleFirestoreListenError,
+    syncStudentsFromCloud,
+    syncEventsFromCloud,
+  ]);
 
   const handleOnboardingComplete = (
     newConfig: Omit<AttendanceConfig, "selectedClassFilter">,
@@ -279,11 +442,13 @@ export default function App() {
 
   // 4. Persistence Handlers (Writes locally and coordinates with Firestore)
   const persistStudents = async (updatedStudents: Student[]) => {
+    studentsRef.current = updatedStudents;
     setStudents(updatedStudents);
     await saveStudentsLocal(updatedStudents);
   };
 
   const persistRecords = async (updatedRecords: AttendanceRecord[]) => {
+    recordsRef.current = updatedRecords;
     setRecords(updatedRecords);
     await saveRecordsLocal(updatedRecords);
   };
@@ -294,7 +459,54 @@ export default function App() {
     try {
       await setDoc(doc(db, "config", "global_config"), updatedConfig);
     } catch (err) {
-      console.error("Failed to update config in Firestore:", err);
+      handleFirestoreListenError("config write", err);
+    }
+  };
+
+  const bumpStudentsVersion = async () => {
+    const nextVer = Date.now();
+    safeLocalStorageSet("absensi_qr_students_version", String(nextVer));
+    const updatedCfg = { ...config, studentsVersion: nextVer };
+    setConfig(updatedCfg);
+    await saveConfigLocal(updatedCfg);
+    try {
+      await setDoc(
+        doc(db, "config", "global_config"),
+        { studentsVersion: nextVer },
+        { merge: true },
+      );
+    } catch (err) {
+      handleFirestoreListenError("students version", err);
+    }
+  };
+
+  const bumpEventsVersion = async () => {
+    const nextVer = Date.now();
+    safeLocalStorageSet("absensi_qr_events_version", String(nextVer));
+    const updatedCfg = { ...config, eventsVersion: nextVer };
+    setConfig(updatedCfg);
+    await saveConfigLocal(updatedCfg);
+    try {
+      await setDoc(
+        doc(db, "config", "global_config"),
+        { eventsVersion: nextVer },
+        { merge: true },
+      );
+    } catch (err) {
+      handleFirestoreListenError("events version", err);
+    }
+  };
+
+  const handleForceSync = async () => {
+    if (!isOnline || isSyncingManual) return;
+    setIsSyncingManual(true);
+    try {
+      await Promise.all([
+        syncStudentsFromCloud(config.studentsVersion || Date.now()),
+        syncEventsFromCloud(config.eventsVersion || Date.now()),
+      ]);
+    } finally {
+      setIsSyncingManual(false);
     }
   };
 
@@ -311,8 +523,9 @@ export default function App() {
         batch.set(doc(db, "calendar_events", ev.id), ev);
       });
       await batch.commit();
+      await bumpEventsVersion();
     } catch (err) {
-      console.error("Failed to sync events to Firestore:", err);
+      handleFirestoreListenError("events write", err);
     }
   };
 
@@ -327,8 +540,9 @@ export default function App() {
 
     try {
       await setDoc(doc(db, "students", id), newStudent);
+      await bumpStudentsVersion();
     } catch (err) {
-      console.error("Failed to add student to Firestore:", err);
+      handleFirestoreListenError("add student", err);
     }
   };
 
@@ -347,19 +561,22 @@ export default function App() {
     try {
       await setDoc(doc(db, "students", editedS.id), editedS);
 
-      const batch = writeBatch(db);
-      records.forEach((r) => {
-        if (r.studentId === editedS.id) {
+      const affectedRecords = records.filter((r) => r.studentId === editedS.id);
+      for (let i = 0; i < affectedRecords.length; i += 450) {
+        const chunk = affectedRecords.slice(i, i + 450);
+        const batch = writeBatch(db);
+        chunk.forEach((r) => {
           batch.set(doc(db, "attendance_records", r.id), {
             ...r,
             studentName: editedS.name,
             className: editedS.className,
           });
-        }
-      });
-      await batch.commit();
+        });
+        await batch.commit();
+      }
+      await bumpStudentsVersion();
     } catch (err) {
-      console.error("Failed to edit student in Firestore:", err);
+      handleFirestoreListenError("edit student", err);
     }
   };
 
@@ -374,15 +591,18 @@ export default function App() {
     try {
       await deleteDoc(doc(db, "students", id));
 
-      const batch = writeBatch(db);
-      records.forEach((r) => {
-        if (r.studentId === id) {
+      const affectedRecords = records.filter((r) => r.studentId === id);
+      for (let i = 0; i < affectedRecords.length; i += 450) {
+        const chunk = affectedRecords.slice(i, i + 450);
+        const batch = writeBatch(db);
+        chunk.forEach((r) => {
           batch.delete(doc(db, "attendance_records", r.id));
-        }
-      });
-      await batch.commit();
+        });
+        await batch.commit();
+      }
+      await bumpStudentsVersion();
     } catch (err) {
-      console.error("Failed to delete student from Firestore:", err);
+      handleFirestoreListenError("delete student", err);
     }
   };
 
@@ -395,13 +615,17 @@ export default function App() {
     persistStudents(updated);
 
     try {
-      const batch = writeBatch(db);
-      formatted.forEach((s) => {
-        batch.set(doc(db, "students", s.id), s);
-      });
-      await batch.commit();
+      for (let i = 0; i < formatted.length; i += 450) {
+        const chunk = formatted.slice(i, i + 450);
+        const batch = writeBatch(db);
+        chunk.forEach((s) => {
+          batch.set(doc(db, "students", s.id), s);
+        });
+        await batch.commit();
+      }
+      await bumpStudentsVersion();
     } catch (err) {
-      console.error("Failed to bulk import students to Firestore:", err);
+      handleFirestoreListenError("bulk import", err);
     }
   };
 
@@ -662,10 +886,20 @@ export default function App() {
 
   // Database center resets
   const handleResetDatabase = async () => {
+    const nextVer = Date.now();
+    const resetConfig: AttendanceConfig = {
+      ...INITIAL_CONFIG,
+      studentsVersion: nextVer,
+      eventsVersion: nextVer,
+    };
+    safeLocalStorageSet("absensi_qr_students_version", String(nextVer));
+    safeLocalStorageSet("absensi_qr_events_version", String(nextVer));
+    loadedMonthsRef.current.clear();
+
     persistStudents([]);
     persistRecords([]);
     persistEvents([]);
-    persistConfig(INITIAL_CONFIG);
+    persistConfig(resetConfig);
 
     try {
       const batch = writeBatch(db);
@@ -679,11 +913,11 @@ export default function App() {
       const eventSnap = await getDocs(collection(db, "calendar_events"));
       eventSnap.forEach((d) => batch.delete(d.ref));
 
-      batch.set(doc(db, "config", "global_config"), INITIAL_CONFIG);
+      batch.set(doc(db, "config", "global_config"), resetConfig);
 
       await batch.commit();
     } catch (err) {
-      console.error("Failed to reset cloud database:", err);
+      handleFirestoreListenError("reset database", err);
     }
   };
 
@@ -692,9 +926,19 @@ export default function App() {
     restoredRecords: AttendanceRecord[],
     restoredConfig: AttendanceConfig,
   ) => {
+    const nextVer = Date.now();
+    const versionedConfig: AttendanceConfig = {
+      ...restoredConfig,
+      studentsVersion: nextVer,
+      eventsVersion: nextVer,
+    };
+    safeLocalStorageSet("absensi_qr_students_version", String(nextVer));
+    safeLocalStorageSet("absensi_qr_events_version", String(nextVer));
+    loadedMonthsRef.current.clear();
+
     persistStudents(restoredStudents);
     persistRecords(restoredRecords);
-    persistConfig(restoredConfig);
+    persistConfig(versionedConfig);
 
     try {
       const batch = writeBatch(db);
@@ -713,11 +957,11 @@ export default function App() {
         batch.set(doc(db, "attendance_records", rec.id), rec);
       });
 
-      batch.set(doc(db, "config", "global_config"), restoredConfig);
+      batch.set(doc(db, "config", "global_config"), versionedConfig);
 
       await batch.commit();
     } catch (err) {
-      console.error("Failed to restore cloud database:", err);
+      handleFirestoreListenError("restore database", err);
     }
   };
 
@@ -799,18 +1043,44 @@ export default function App() {
               </span>
             </div>
 
-            {/* Firebase Sync Status */}
-            <div className="flex items-center space-x-2 bg-indigo-50 border border-indigo-100/50 px-3 py-1.5 rounded-xl text-[11px]">
-              {isOnline ? (
+            {/* Firebase Sync Status & Manual Pull */}
+            <button
+              type="button"
+              onClick={handleForceSync}
+              disabled={!isOnline || isSyncingManual}
+              className={`flex items-center space-x-2 px-3 py-1.5 rounded-xl text-[11px] border transition-colors cursor-pointer disabled:cursor-default ${
+                isQuotaExceeded
+                  ? "bg-amber-50 border-amber-200/70 hover:bg-amber-100/70"
+                  : "bg-indigo-50 border-indigo-100/50 hover:bg-indigo-100/60"
+              }`}
+              title={
+                isQuotaExceeded
+                  ? "Kuota baca harian Firestore tercapai. Data tetap tersimpan secara lokal. Klik untuk coba sinkron ulang."
+                  : isOnline
+                    ? "Online · Klik untuk sinkronisasi manual data siswa & kalender"
+                    : "Offline (Menggunakan Cache Lokal)"
+              }
+            >
+              {isSyncingManual ? (
                 <>
-                  <Cloud className="h-3.5 w-3.5 text-indigo-600 animate-pulse" />
+                  <RefreshCw className="h-3.5 w-3.5 text-indigo-600 animate-spin" />
                   <span className="text-indigo-800 font-bold sm:block hidden">
-                    Sinkron Cloud Aktif
+                    Menyinkronkan...
                   </span>
-                  <span
-                    className="h-1.5 w-1.5 rounded-full bg-emerald-500"
-                    title="Online & Terhubung"
-                  ></span>
+                </>
+              ) : isQuotaExceeded ? (
+                <>
+                  <CloudOff className="h-3.5 w-3.5 text-amber-600" />
+                  <span className="text-amber-800 font-bold sm:block hidden">
+                    Mode Lokal (Kuota Cloud Penuh)
+                  </span>
+                </>
+              ) : isOnline ? (
+                <>
+                  <Cloud className="h-3.5 w-3.5 text-indigo-600" />
+                  <span className="text-indigo-800 font-bold sm:block hidden">
+                    Sinkron Hemat Aktif
+                  </span>
                 </>
               ) : (
                 <>
@@ -818,13 +1088,9 @@ export default function App() {
                   <span className="text-slate-500 font-bold sm:block hidden">
                     Mode Offline-First
                   </span>
-                  <span
-                    className="h-1.5 w-1.5 rounded-full bg-amber-500"
-                    title="Offline (Menggunakan Cache Lokal)"
-                  ></span>
                 </>
               )}
-            </div>
+            </button>
 
             {/* Global Class Scope selector */}
             <div className="flex items-center space-x-1 bg-purple-50/70 border border-purple-100/50 px-2.5 py-1 rounded-xl">
@@ -990,6 +1256,8 @@ export default function App() {
               onAddManualRecord={handleAddManualRecord}
               activeClass={config.selectedClassFilter}
               config={config}
+              onEnsureMonthLoaded={ensureMonthLoaded}
+              isLoadingHistory={isLoadingHistory}
             />
           )}
 

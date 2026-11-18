@@ -1,9 +1,9 @@
-import { useState, useMemo, FormEvent } from 'react';
+import { useState, useMemo, useEffect, FormEvent } from 'react';
 import { AttendanceRecord, Student, AttendanceStatus, AttendanceConfig } from '../types';
 import { 
   Calendar, Search, Filter, Edit2, Trash2, 
   FileSpreadsheet, ArrowUpDown, ChevronDown, Check, X,
-  AlertCircle, ShieldCheck, PlusCircle, Bookmark, Printer
+  AlertCircle, ShieldCheck, PlusCircle, Bookmark, Printer, RefreshCw
 } from 'lucide-react';
 
 interface AttendanceLogsProps {
@@ -14,6 +14,8 @@ interface AttendanceLogsProps {
   onAddManualRecord: (studentId: string, status: AttendanceStatus, date: string, notes?: string) => void;
   activeClass: string;
   config?: AttendanceConfig;
+  onEnsureMonthLoaded?: (year: number, month: number, force?: boolean) => Promise<void>;
+  isLoadingHistory?: boolean;
 }
 
 export default function AttendanceLogs({
@@ -23,7 +25,9 @@ export default function AttendanceLogs({
   onDeleteRecord,
   onAddManualRecord,
   activeClass,
-  config
+  config,
+  onEnsureMonthLoaded,
+  isLoadingHistory = false,
 }: AttendanceLogsProps) {
   const [viewMode, setViewMode] = useState<'daily' | 'monthly'>('daily');
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth());
@@ -43,6 +47,21 @@ export default function AttendanceLogs({
   const [manualStatus, setManualStatus] = useState<AttendanceStatus>('hadir');
   const [manualDate, setManualDate] = useState(new Date().toISOString().split('T')[0]);
   const [manualNotes, setManualNotes] = useState('');
+
+  // On-demand historical month fetch when viewing past dates or months
+  useEffect(() => {
+    if (!onEnsureMonthLoaded) return;
+    if (viewMode === 'daily' && selectedDate) {
+      const [yStr, mStr] = selectedDate.split('-');
+      const y = Number(yStr);
+      const m = Number(mStr) - 1;
+      if (Number.isFinite(y) && Number.isFinite(m) && m >= 0 && m <= 11) {
+        onEnsureMonthLoaded(y, m);
+      }
+    } else if (viewMode === 'monthly') {
+      onEnsureMonthLoaded(selectedYear, selectedMonth);
+    }
+  }, [viewMode, selectedDate, selectedMonth, selectedYear, onEnsureMonthLoaded]);
 
   // Create lookups
   const studentsMap = useMemo(() => {
@@ -870,7 +889,19 @@ export default function AttendanceLogs({
                 <p className="text-xs text-gray-500">Tampilan rekap harian dalam satu bulan penuh untuk kelas <strong>{activeClass}</strong></p>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                {onEnsureMonthLoaded && (
+                  <button
+                    type="button"
+                    onClick={() => onEnsureMonthLoaded(selectedYear, selectedMonth, true)}
+                    disabled={isLoadingHistory}
+                    className="px-3 py-2 bg-gray-50 hover:bg-gray-100 text-gray-700 border border-gray-200 text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 disabled:opacity-50"
+                    title="Ambil ulang data bulan ini dari cloud"
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 text-purple-600 ${isLoadingHistory ? 'animate-spin' : ''}`} />
+                    <span>{isLoadingHistory ? 'Memuat...' : 'Sinkron Bulan'}</span>
+                  </button>
+                )}
                 <button
                   onClick={handleExportMonthlyCSV}
                   disabled={activeStudents.length === 0}
